@@ -1,0 +1,26 @@
+﻿# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.egg-info/
+.env
+
+# Données — ne jamais publier les données brutes volumineuses
+data/raw/
+data/processed/
+
+# Power BI
+*.pbix
+
+# Système
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
