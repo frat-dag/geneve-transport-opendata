@@ -1,2 +1,2 @@
 # tpg-opendata-analysis
-Analyse des données open data des TPG genevois — R, Python, Power BI, ML
+Analyse complète des données open data des Transports Publics Genevois — R, Python, Power BI, ML/IA
