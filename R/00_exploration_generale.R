@@ -9,10 +9,13 @@
 #            — statistiques descriptives formelles
 #            — rapport de qualité
 # Date     : avril 2026
-# Note     : Ce script doit être exécuté EN PREMIER avant
-#            tous les autres scripts du projet.
-#            Il documente l'état brut des données et les
-#            décisions de nettoyage prises.
+# Note     : Ce script consolide l'analyse exploratoire (EDA)
+#            conduite au fil du projet. Dans une démarche
+#            exploratoire, l'EDA formelle émerge naturellement
+#            après une première phase d'exploration qui permet
+#            de cibler les vérifications sur les dimensions
+#            réellement pertinentes.
+#            À exécuter avant toute nouvelle analyse.
 # =============================================================
 
 # --- 1. Packages ---------------------------------------------
