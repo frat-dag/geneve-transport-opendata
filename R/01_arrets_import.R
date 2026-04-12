@@ -9,12 +9,12 @@
 # =============================================================
 
 # --- 1. Chargement des packages ------------------------------
-library(httr2)
-library(readr)
-library(dplyr)
-library(janitor)
-library(leaflet)
-library(htmlwidgets)
+library(httr2)       # Appels API REST — remplace l'ancien package httr
+library(readr)       # Lecture rapide de fichiers CSV avec gestion encodage
+library(dplyr)       # Manipulation de données : filter, mutate, summarise...
+library(janitor)     # Nettoyage des noms de colonnes (clean_names)
+library(leaflet)     # Cartes interactives dans RStudio et HTML
+library(htmlwidgets) # Sauvegarde des widgets interactifs en fichier HTML
 
 # --- 2. Paramètres de l'API ----------------------------------
 
@@ -116,16 +116,17 @@ carte <- leaflet() |>
     ),
     group = "Arrêts actifs"
   ) |>
-  # Arrêts inactifs en gris
+  # Arrêts inactifs en bleu foncé
   addCircleMarkers(
     data        = arrets_inactifs,
     lng         = ~longitude,
     lat         = ~latitude,
-    radius      = 3,
-    color       = "#4A6FA5",
+    radius      = 5,
+    fillOpacity = 0.8,
+    stroke      = TRUE,
+    color       = "#2C4A7C",   # Bordure légèrement plus foncée
+    weight      = 1,
     fillColor   = "#4A6FA5",
-    stroke      = FALSE,
-    fillOpacity = 0.6,
     popup       = ~paste0(
       "<b>", nomarret, "</b><br>",
       "Commune : ", commune, "<br>",
