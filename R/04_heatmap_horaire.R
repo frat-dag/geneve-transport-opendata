@@ -108,3 +108,141 @@ ggplot(heatmap_data,
 ggsave("outputs/04_heatmap_horaire.png",
        width = 12, height = 5, dpi = 150)
 message("✓ Heatmap sauvegardée : outputs/04_heatmap_horaire.png")
+
+# =============================================================
+# TEST STATISTIQUE — T-003
+# Hypothèse : Le pic du soir (17h) est significativement
+#             plus élevé que le pic du matin (8h)
+# Méthode   : Test de Wilcoxon apparié (signed-rank test)
+# H0        : Pas de différence entre pic matin et pic soir
+# H1        : Le pic soir > pic matin (test unilatéral)
+# Données   : Dataset fréquentation par tranche horaire
+#             jours NORMAL uniquement
+#
+# Pourquoi Wilcoxon APPARIÉ et pas Mann-Whitney ?
+#   → Les observations matin et soir viennent du MÊME jour
+#   → Ce sont des mesures appariées : pour chaque date,
+#     on compare la tranche 8h à la tranche 17h
+#   → L'appariement élimine la variabilité inter-journalière
+#     et augmente la puissance du test
+#   → La normalité des différences n'est pas garantie
+#     → Wilcoxon signed-rank (non-paramétrique apparié)
+#
+# Pourquoi test UNILATÉRAL ?
+#   → Notre hypothèse est directionnelle : on prédit que
+#     le soir EST PLUS GRAND que le matin, pas juste différent
+#   → Un test unilatéral est plus puissant quand la direction
+#     est clairement anticipée — mais il faut le justifier
+#     AVANT de voir les données, pas après (biais de confirmation)
+#   → Justification a priori : la littérature sur les transports
+#     urbains montre universellement un pic soir > matin
+# =============================================================
+
+cat("\n", paste(rep("=", 60), collapse = ""), "\n")
+cat("TEST T-003 — Wilcoxon apparié : pic matin vs pic soir\n")
+cat(paste(rep("=", 60), collapse = ""), "\n\n")
+
+# --- Préparation des données --------------------------------
+# Pour chaque date, extraire les montées à 8h et à 17h
+# On filtre sur jours NORMAL uniquement
+
+freq_apparie <- freq_horaire |>
+  filter(
+    horaire_type == "NORMAL",
+    heure %in% c(8, 17)
+  ) |>
+  group_by(date, heure) |>
+  summarise(
+    montees = sum(nb_de_montees, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  tidyr::pivot_wider(
+    names_from  = heure,
+    values_from = montees,
+    names_prefix = "h"
+  ) |>
+  filter(!is.na(h8), !is.na(h17))  # garder uniquement les jours avec les deux mesures
+
+cat("Nombre de jours avec les deux mesures :", nrow(freq_apparie), "\n\n")
+
+# --- Statistiques descriptives ------------------------------
+cat("--- Statistiques descriptives ---\n")
+cat("Pic matin (8h)  — médiane :",
+    round(median(freq_apparie$h8)), "montées\n")
+cat("Pic soir  (17h) — médiane :",
+    round(median(freq_apparie$h17)), "montées\n")
+cat("Ratio soir/matin           :",
+    round(median(freq_apparie$h17) / median(freq_apparie$h8), 2), "\n")
+
+# Distribution des différences
+diff_soir_matin <- freq_apparie$h17 - freq_apparie$h8
+cat("\nDifférence soir-matin :\n")
+cat("  Médiane :", round(median(diff_soir_matin)), "montées\n")
+cat("  Moyenne :", round(mean(diff_soir_matin)), "montées\n")
+cat("  Min     :", round(min(diff_soir_matin)), "\n")
+cat("  Max     :", round(max(diff_soir_matin)), "\n")
+cat("  % jours où soir > matin :",
+    round(mean(diff_soir_matin > 0) * 100, 1), "%\n\n")
+
+# --- Vérification normalité des différences -----------------
+cat("--- Normalité des différences (Shapiro-Wilk) ---\n")
+cat("On teste la normalité des DIFFÉRENCES (h17 - h8)\n")
+cat("C'est ce qui compte pour le test apparié\n\n")
+sw_diff <- shapiro.test(diff_soir_matin)
+cat("W =", round(sw_diff$statistic, 4),
+    "| p =", format(sw_diff$p.value, scientific = TRUE, digits = 3),
+    "| Normal :", ifelse(sw_diff$p.value > 0.05, "OUI", "NON"), "\n")
+cat("→ Si NON : Wilcoxon signed-rank (non-paramétrique)\n")
+cat("→ Si OUI : test t apparié possible\n\n")
+
+# --- Test de Wilcoxon apparié -------------------------------
+cat("--- Test de Wilcoxon signed-rank (apparié) ---\n")
+cat("H0 : médiane des différences = 0\n")
+cat("H1 : médiane des différences > 0 (soir > matin)\n\n")
+
+wilcox_apparie <- wilcox.test(
+  freq_apparie$h17,
+  freq_apparie$h8,
+  paired      = TRUE,          # CRUCIAL : appariement par date
+  alternative = "greater",     # test unilatéral : soir > matin
+  conf.int    = TRUE,
+  conf.level  = 0.95
+)
+print(wilcox_apparie)
+
+cat("\nV =", wilcox_apparie$statistic,
+    "| p =", format(wilcox_apparie$p.value, scientific = TRUE, digits = 3), "\n")
+cat(ifelse(wilcox_apparie$p.value < 0.05,
+           "REJET H0 — le pic soir est significativement > pic matin",
+           "NON-REJET H0"), "\n")
+cat("Estimation Hodges-Lehmann :",
+    round(wilcox_apparie$estimate), "montées\n")
+cat("IC 95% inférieur           :",
+    round(wilcox_apparie$conf.int[1]), "montées\n\n")
+
+# --- Taille d'effet -----------------------------------------
+# r = Z / sqrt(N) pour Wilcoxon apparié
+n_paires <- nrow(freq_apparie)
+z_score  <- qnorm(wilcox_apparie$p.value)
+r_effet  <- abs(z_score) / sqrt(n_paires)
+
+cat("Taille d'effet r =", round(r_effet, 3), "\n")
+cat("Interprétation : <0.1 négligeable | 0.1-0.3 petit",
+    "| 0.3-0.5 moyen | >0.5 grand\n\n")
+
+# --- Conclusion formelle T-003 ------------------------------
+cat("--- CONCLUSION T-003 ---\n")
+cat("Le pic du soir (17h) est-il significativement\n")
+cat("plus élevé que le pic du matin (8h) ?\n\n")
+cat("Médiane matin (8h)  :", round(median(freq_apparie$h8)), "montées\n")
+cat("Médiane soir (17h)  :", round(median(freq_apparie$h17)), "montées\n")
+cat("Différence médiane  :", round(median(diff_soir_matin)), "montées\n")
+cat("% jours soir > matin:",
+    round(mean(diff_soir_matin > 0) * 100, 1), "%\n")
+cat("p-value             :",
+    format(wilcox_apparie$p.value, scientific = TRUE, digits = 3), "\n")
+cat("Taille d'effet r    :", round(r_effet, 3), "\n")
+cat("Statut T-003        : COMPLÉTÉ\n")
+
+# NOTE VIZ : boxplot apparié matin vs soir par jour de semaine
+# NOTE VIZ : courbe densité des différences soir-matin

@@ -226,3 +226,138 @@ ggplot(profil_selection,
 ggsave("outputs/05_profil_journalier_selection.png",
        width = 12, height = 6, dpi = 150)
 message("✓ Graphique sélection sauvegardé")
+
+# =============================================================
+# TESTS STATISTIQUES — T-001
+# Hypothèse : Les jours de semaine ont des fréquentations
+#             moyennes significativement différentes entre eux
+# Méthode   : ANOVA one-way + post-hoc Tukey HSD
+# H0        : Toutes les moyennes journalières sont égales
+# H1        : Au moins un jour diffère significativement
+# Données   : Jours NORMAL uniquement (biais fériés éliminé)
+# =============================================================
+
+cat("\n", paste(rep("=", 60), collapse = ""), "\n")
+cat("TEST T-001 — ANOVA + Tukey : différences entre jours\n")
+cat(paste(rep("=", 60), collapse = ""), "\n\n")
+
+# Données de base : montées par heure et par jour NORMAL
+# On agrège d'abord par date et par jour pour avoir
+# une observation indépendante par jour-date
+freq_par_jour_date <- freq_horaire |>
+  filter(horaire_type == "NORMAL") |>
+  group_by(date, jour) |>
+  summarise(
+    total_montees = sum(nb_de_montees, na.rm = TRUE),
+    .groups       = "drop"
+  )
+
+cat("Nombre d'observations par jour :\n")
+print(freq_par_jour_date |> count(jour))
+
+# --- ANOVA one-way ------------------------------------------
+# Vérifie d'abord les conditions d'application :
+# 1. Indépendance des observations — OK (jours distincts)
+# 2. Normalité des résidus — à vérifier (Shapiro-Wilk)
+# 3. Homogénéité des variances — à vérifier (Levene)
+
+# Test de normalité des résidus (Shapiro-Wilk par groupe)
+cat("\n--- Vérification normalité (Shapiro-Wilk par jour) ---\n")
+cat("H0 : distribution normale | p > 0.05 → normalité acceptable\n\n")
+shapiro_resultats <- freq_par_jour_date |>
+  group_by(jour) |>
+  summarise(
+    n         = n(),
+    statistic = shapiro.test(total_montees)$statistic,
+    p_value   = shapiro.test(total_montees)$p.value,
+    normal    = ifelse(p_value > 0.05, "OUI", "NON"),
+    .groups   = "drop"
+  )
+print(shapiro_resultats)
+
+# Test d'homogénéité des variances (Bartlett)
+cat("\n--- Vérification homogénéité des variances (Bartlett) ---\n")
+bartlett_test <- bartlett.test(total_montees ~ jour,
+                               data = freq_par_jour_date)
+print(bartlett_test)
+cat("Variances homogènes (p > 0.05) :",
+    ifelse(bartlett_test$p.value > 0.05, "OUI", "NON"), "\n")
+
+# --- ANOVA --------------------------------------------------
+cat("\n--- ANOVA one-way ---\n")
+modele_anova <- aov(total_montees ~ jour,
+                    data = freq_par_jour_date)
+summary_anova <- summary(modele_anova)
+print(summary_anova)
+
+p_anova <- summary_anova[[1]]$`Pr(>F)`[1]
+f_stat  <- summary_anova[[1]]$`F value`[1]
+
+cat("\nF =", round(f_stat, 3),
+    "| p-value =", format(p_anova, scientific = TRUE, digits = 3), "\n")
+cat("Conclusion ANOVA :",
+    ifelse(p_anova < 0.05,
+           "REJET H0 — au moins un jour diffère significativement (p < 0.05)",
+           "NON-REJET H0 — pas de différence significative"), "\n")
+
+# Taille d'effet — eta-carré (η²)
+# Proportion de variance expliquée par le jour de la semaine
+ss_total <- sum(summary_anova[[1]]$`Sum Sq`)
+ss_effet <- summary_anova[[1]]$`Sum Sq`[1]
+eta_carre <- ss_effet / ss_total
+cat("Taille d'effet η² =", round(eta_carre, 4),
+    "|", round(eta_carre * 100, 1), "% de variance expliquée par le jour\n")
+cat("Interprétation η² : <0.01 négligeable | 0.01-0.06 petit",
+    "| 0.06-0.14 moyen | >0.14 grand\n")
+
+# --- Post-hoc Tukey -----------------------------------------
+# Si ANOVA significative → quels jours diffèrent entre eux ?
+if (p_anova < 0.05) {
+  cat("\n--- Post-hoc Tukey HSD ---\n")
+  cat("Comparaisons deux à deux — ajustement multiplicitié Tukey\n")
+  cat("p adj < 0.05 → différence significative entre les deux jours\n\n")
+  tukey <- TukeyHSD(modele_anova)
+  print(tukey)
+  
+  # Version lisible
+  tukey_df <- as.data.frame(tukey$jour) |>
+    tibble::rownames_to_column("comparaison") |>
+    mutate(
+      significatif = ifelse(`p adj` < 0.05, "OUI ***", "non"),
+      diff_k       = round(diff / 1000, 1)
+    ) |>
+    arrange(`p adj`)
+  
+  cat("\n--- Résumé Tukey (trié par p-value) ---\n")
+  print(tukey_df |>
+          select(comparaison, diff_k, `p adj`, significatif) |>
+          rename(
+            `Diff (k montées)` = diff_k,
+            `p ajusté`         = `p adj`,
+            `Significatif`     = significatif
+          ))
+}
+
+# --- Alternative non-paramétrique ---------------------------
+# Si normalité violée → Kruskal-Wallis + Dunn
+cat("\n--- Alternative non-paramétrique : Kruskal-Wallis ---\n")
+cat("(robuste si normalité non vérifiée)\n")
+kruskal_test <- kruskal.test(total_montees ~ jour,
+                             data = freq_par_jour_date)
+print(kruskal_test)
+cat("Conclusion KW :",
+    ifelse(kruskal_test$p.value < 0.05,
+           "REJET H0 — différences significatives",
+           "NON-REJET H0"), "\n")
+
+# --- Conclusion finale T-001 --------------------------------
+cat("\n--- CONCLUSION T-001 ---\n")
+cat("Les différences de fréquentation entre jours de semaine\n")
+cat("sont-elles statistiquement significatives ?\n")
+cat("ANOVA     : p =", format(p_anova, digits = 3), "\n")
+cat("KW        : p =", format(kruskal_test$p.value, digits = 3), "\n")
+cat("η²        :", round(eta_carre, 4), "\n")
+cat("Statut T-001 : COMPLÉTÉ\n")
+
+# NOTE VIZ : tableau Tukey formaté intéressant pour rapport final
+# NOTE VIZ : heatmap des p-values Tukey (matrice jours x jours) pour Power BI
