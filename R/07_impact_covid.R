@@ -248,3 +248,115 @@ ggplot(impact_long,
 ggsave("outputs/07_impact_covid_par_type.png",
        width = 10, height = 6, dpi = 150)
 message("✓ Graphique impact par type de ligne sauvegardé")
+
+# --- 8. Notes méthodologiques importantes --------------------
+
+cat(paste(rep("=", 60), collapse = ""), "\n")
+cat("NOTES MÉTHODOLOGIQUES\n")
+cat(paste(rep("=", 60), collapse = ""), "\n\n")
+
+cat("1. BIAIS GLCT (SYN-003) :\n")
+cat("   Le type GLCT affiche 117% de récupération post-COVID.\n")
+cat("   ATTENTION : ce n'est PAS une croissance organique.\n")
+cat("   En mai 2023, les TPG ont remporté l'appel d'offres GLCT\n")
+cat("   et intégré de nouvelles lignes transfrontalières\n")
+cat("   (60, 64, 66, 68 — pays de Gex).\n")
+cat("   => Exclure le GLCT des comparaisons pré/post-COVID\n\n")
+
+cat("2. DOUBLE RUPTURE STRUCTURELLE (SYN-002) :\n")
+cat("   Deux événements majeurs affectent la comparabilité\n")
+cat("   des données sur la période 2016-2026 :\n")
+cat("   a) Décembre 2019 : mise en service Léman Express\n")
+cat("      → Réorganisation complète du réseau TPG\n")
+cat("      → Ligne 12 déchargée, rôle Bel-Air modifié\n")
+cat("   b) Mars 2020 : COVID-19\n")
+cat("      → Chute brutale de la fréquentation\n")
+cat("   => Toute comparaison doit tenir compte de ces deux\n")
+cat("      ruptures, pas seulement du COVID\n\n")
+
+cat("3. GRATUITÉ JEUNES (SYN-001) :\n")
+cat("   Entrée en vigueur le 1er janvier 2025.\n")
+cat("   Les données post-2025 seront structurellement\n")
+cat("   différentes pour les lignes scolaires/secondaires.\n")
+cat("   => À tester : rupture structurelle jan 2025 sur\n")
+cat("      lignes SCOLAIRE et SECONDAIRE\n\n")
+
+# --- 9. Graphique final — évolution avec TOUTES les ruptures -
+
+ggplot(evolution_mensuelle,
+       aes(x = date_mois, y = total_montees / 1000000,
+           color = periode)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.5) +
+  # Zone COVID
+  annotate("rect",
+           xmin = as.Date("2020-03-01"),
+           xmax = as.Date("2022-01-01"),
+           ymin = -Inf, ymax = Inf,
+           fill = "#FFCCCC", alpha = 0.3) +
+  # Ligne Léman Express — décembre 2019
+  geom_vline(xintercept = as.Date("2019-12-01"),
+             linetype = "dashed",
+             color = "#1D9E75",
+             linewidth = 0.8) +
+  # Léman Express — déplacé à gauche de la ligne
+  annotate("text",
+           x = as.Date("2019-09-01"),
+           y = 4,
+           label = "Léman Express\ndéc. 2019",
+           color = "#1D9E75",
+           size = 2.8, hjust = 1,
+           fontface = "italic") +
+  # Ligne gratuité jeunes — janvier 2025
+  geom_vline(xintercept = as.Date("2025-01-01"),
+             linetype = "dashed",
+             color = "#FF8C00",
+             linewidth = 0.8) +
+  # Gratuité jeunes — légende déplacée en bas
+  annotate("text",
+           x = as.Date("2025-01-01"),
+           y = 4,
+           label = "Gratuité\njeunes\njan. 2025",
+           color = "#FF8C00",
+           size = 2.8, hjust = 0.5,
+           fontface = "italic") +
+  # Ligne moyenne pré-COVID
+  geom_hline(yintercept = moy_pre / 1000000,
+             linetype = "dashed",
+             color = "#4A6FA5",
+             linewidth = 0.6) +
+  # Moyenne pré-COVID — déplacée plus à droite
+  annotate("text",
+           x = as.Date("2018-01-01"),
+           y = moy_pre / 1000000 + 0.3,
+           label = paste0("Moyenne pré-COVID : ",
+                          round(moy_pre / 1000000, 1), "M"),
+           color = "#4A6FA5", size = 3, hjust = 0) +
+  annotate("text",
+           x = mois_plancher$date_mois + 60,
+           y = mois_plancher$total_montees / 1000000 + 1.2,
+           label = paste0("Plancher : ",
+                          round(mois_plancher$total_montees / 1000000, 1),
+                          "M (", format(mois_plancher$date_mois, "%b %Y"), ")"),
+           color = "#E30613", size = 3) +
+  scale_color_manual(values = couleurs_periodes, name = "Période") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(labels = function(x) paste0(x, "M")) +
+  labs(
+    title    = "Fréquentation TPG 2016-2026 — 3 ruptures structurelles majeures",
+    subtitle = "Léman Express (déc. 2019) · COVID-19 (mar. 2020) · Gratuité jeunes (jan. 2025)",
+    x        = NULL,
+    y        = "Total montées (millions)",
+    caption  = "Source : opendata.tpg.ch | Zone rouge = période COVID · Lignes vertes/oranges = ruptures structurelles"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    plot.subtitle    = element_text(color = "grey50"),
+    panel.grid.minor = element_blank(),
+    legend.position  = "top"
+  )
+
+ggsave("outputs/07_impact_covid_ruptures_completes.png",
+       width = 14, height = 6, dpi = 150)
+message("✓ Graphique ruptures complètes sauvegardé")
