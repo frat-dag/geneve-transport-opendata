@@ -825,3 +825,183 @@ cat("\nStatut T-004b : COMPLÉTÉ\n")
 
 # NOTE VIZ : superposition résidus STL + ruptures Bai-Perron
 # NOTE VIZ : comparaison graphique série brute vs résidus
+
+# =============================================================
+# TEST STATISTIQUE — T-006
+# Hypothèse : La fréquentation post-COVID (jan 2022+) est
+#             significativement différente du niveau pré-COVID
+#             (jan 2016 → fév 2020)
+# Méthode   : Mann-Whitney bilatéral
+# H0        : Les distributions pré et post-COVID sont égales
+# H1        : Les distributions diffèrent
+#
+# Pourquoi Mann-Whitney et pas un test t ?
+#   → Normalité non vérifiée sur données similaires (T-001)
+#   → Mann-Whitney robuste aux asymétries
+#   → Deux groupes indépendants : pré-COVID ≠ post-COVID
+#     (pas d'appariement possible contrairement à T-003)
+#
+# Pourquoi bilatéral et pas unilatéral ?
+#   → Contrairement à T-003, on ne peut pas prédire a priori
+#     si post > pré ou pré > post
+#   → On sait que la récupération est à ~100.7% en moyenne
+#     mais la distribution complète peut différer
+#   → Un test bilatéral est plus honnête ici — on laisse
+#     les données décider de la direction
+#
+# Note importante : on exclut la période COVID (mar 2020 →
+# déc 2021) des deux groupes — elle constitue un régime
+# distinct prouvé par T-004. L'inclure dans l'un ou l'autre
+# groupe biaiserait la comparaison.
+# =============================================================
+
+cat("\n", paste(rep("=", 60), collapse = ""), "\n")
+cat("TEST T-006 — Mann-Whitney : pré-COVID vs post-COVID\n")
+cat(paste(rep("=", 60), collapse = ""), "\n\n")
+
+cat("Périodes comparées :\n")
+cat("  Pré-COVID  : jan 2016 → fév 2020 (avant confinement)\n")
+cat("  Post-COVID : jan 2022 → fév 2026 (après restrictions)\n")
+cat("  Exclu      : mar 2020 → déc 2021 (période COVID)\n\n")
+
+# --- Préparation des deux groupes ---------------------------
+pre_covid <- evolution_mensuelle |>
+  filter(date_mois < as.Date("2020-03-01"))
+
+post_covid <- evolution_mensuelle |>
+  filter(date_mois >= as.Date("2022-01-01"))
+
+cat("--- Tailles des groupes ---\n")
+cat("Pré-COVID  : n =", nrow(pre_covid), "mois\n")
+cat("Post-COVID : n =", nrow(post_covid), "mois\n\n")
+
+# --- Statistiques descriptives ------------------------------
+cat("--- Statistiques descriptives ---\n\n")
+stats_groupes <- data.frame(
+  groupe    = c("Pré-COVID", "Post-COVID"),
+  n         = c(nrow(pre_covid), nrow(post_covid)),
+  moyenne   = c(mean(pre_covid$total_montees),
+                mean(post_covid$total_montees)),
+  mediane   = c(median(pre_covid$total_montees),
+                median(post_covid$total_montees)),
+  sd        = c(sd(pre_covid$total_montees),
+                sd(post_covid$total_montees)),
+  min       = c(min(pre_covid$total_montees),
+                min(post_covid$total_montees)),
+  max       = c(max(pre_covid$total_montees),
+                max(post_covid$total_montees))
+)
+
+for (i in 1:nrow(stats_groupes)) {
+  r <- stats_groupes[i, ]
+  cat(r$groupe, ":\n")
+  cat("  n        :", r$n, "mois\n")
+  cat("  Moyenne  :", round(r$moyenne / 1e6, 2), "M montées\n")
+  cat("  Médiane  :", round(r$mediane / 1e6, 2), "M montées\n")
+  cat("  Écart-type:", round(r$sd / 1e6, 2), "M montées\n")
+  cat("  Min      :", round(r$min / 1e6, 2), "M montées\n")
+  cat("  Max      :", round(r$max / 1e6, 2), "M montées\n\n")
+}
+
+# Différence relative des médianes
+diff_mediane_pct <- round(
+  (median(post_covid$total_montees) /
+     median(pre_covid$total_montees) - 1) * 100, 2)
+cat("Différence médiane post vs pré :", diff_mediane_pct, "%\n\n")
+
+# --- Vérification normalité ---------------------------------
+cat("--- Vérification normalité (Shapiro-Wilk) ---\n")
+sw_pre  <- shapiro.test(pre_covid$total_montees)
+sw_post <- shapiro.test(post_covid$total_montees)
+
+cat("Pré-COVID  : W =", round(sw_pre$statistic, 4),
+    "| p =", format(sw_pre$p.value, scientific = TRUE, digits = 3),
+    "| Normal :", ifelse(sw_pre$p.value > 0.05, "OUI", "NON"), "\n")
+cat("Post-COVID : W =", round(sw_post$statistic, 4),
+    "| p =", format(sw_post$p.value, scientific = TRUE, digits = 3),
+    "| Normal :", ifelse(sw_post$p.value > 0.05, "OUI", "NON"), "\n\n")
+
+# --- Test de Mann-Whitney -----------------------------------
+cat("--- Test de Mann-Whitney (bilatéral) ---\n")
+cat("H0 : distributions pré et post-COVID identiques\n")
+cat("H1 : distributions diffèrent\n\n")
+
+mw_t006 <- wilcox.test(
+  post_covid$total_montees,
+  pre_covid$total_montees,
+  alternative = "two.sided",
+  conf.int    = TRUE,
+  conf.level  = 0.95
+)
+print(mw_t006)
+
+cat("\nW =", mw_t006$statistic,
+    "| p =", format(mw_t006$p.value, scientific = TRUE, digits = 3), "\n")
+cat(ifelse(mw_t006$p.value < 0.05,
+           "REJET H0 — pré et post-COVID diffèrent significativement",
+           "NON-REJET H0 — pas de différence significative"), "\n\n")
+
+cat("Estimation Hodges-Lehmann :",
+    round(mw_t006$estimate / 1e6, 3), "M montées\n")
+cat("IC 95% : [",
+    round(mw_t006$conf.int[1] / 1e6, 3), "M ;",
+    round(mw_t006$conf.int[2] / 1e6, 3), "M ]\n")
+cat("Direction : post-COVID",
+    ifelse(mw_t006$estimate > 0, "> pré-COVID", "< pré-COVID"), "\n\n")
+
+# --- Taille d'effet -----------------------------------------
+n_total_t006 <- nrow(pre_covid) + nrow(post_covid)
+z_t006       <- qnorm(mw_t006$p.value / 2)
+r_t006       <- abs(z_t006) / sqrt(n_total_t006)
+
+cat("Taille d'effet r =", round(r_t006, 3), "\n")
+cat("Interprétation : <0.1 négligeable | 0.1-0.3 petit",
+    "| 0.3-0.5 moyen | >0.5 grand\n\n")
+
+# --- Test complémentaire : variance -----------------------
+# La récupération peut être complète en niveau mais
+# la volatilité peut avoir changé — comme détecté par CUSUM²
+cat("--- Test complémentaire : variance (Levene/Bartlett) ---\n")
+cat("Question : la volatilité mensuelle a-t-elle changé\n")
+cat("entre pré et post-COVID ?\n\n")
+
+variance_df <- data.frame(
+  montees = c(pre_covid$total_montees, post_covid$total_montees),
+  groupe  = c(rep("pre", nrow(pre_covid)),
+              rep("post", nrow(post_covid)))
+)
+
+bartlett_t006 <- bartlett.test(montees ~ groupe, data = variance_df)
+print(bartlett_t006)
+
+cat("\nVariances homogènes (p > 0.05) :",
+    ifelse(bartlett_t006$p.value > 0.05, "OUI", "NON"), "\n")
+cat("Variance pré-COVID  :", round(sd(pre_covid$total_montees) / 1e6, 3),
+    "M (écart-type)\n")
+cat("Variance post-COVID :", round(sd(post_covid$total_montees) / 1e6, 3),
+    "M (écart-type)\n\n")
+
+# --- Conclusion formelle T-006 ------------------------------
+cat(paste(rep("=", 60), collapse = ""), "\n")
+cat("CONCLUSION T-006\n")
+cat(paste(rep("=", 60), collapse = ""), "\n\n")
+cat("La fréquentation post-COVID est-elle significativement\n")
+cat("différente du niveau pré-COVID ?\n\n")
+cat("Médiane pré-COVID  :", round(median(pre_covid$total_montees)/1e6,2),
+    "M montées/mois\n")
+cat("Médiane post-COVID :", round(median(post_covid$total_montees)/1e6,2),
+    "M montées/mois\n")
+cat("Différence médiane :", diff_mediane_pct, "%\n")
+cat("p-value Mann-Whitney:", format(mw_t006$p.value,
+                                    scientific = TRUE, digits = 3), "\n")
+cat("Hodges-Lehmann     :", round(mw_t006$estimate / 1e6, 3), "M\n")
+cat("IC 95%             : [",
+    round(mw_t006$conf.int[1] / 1e6, 3), "M ;",
+    round(mw_t006$conf.int[2] / 1e6, 3), "M ]\n")
+cat("Taille d'effet r   :", round(r_t006, 3), "\n")
+cat("Variance homogène  :",
+    ifelse(bartlett_t006$p.value > 0.05, "OUI", "NON"), "\n")
+cat("Statut T-006       : COMPLÉTÉ\n")
+
+# NOTE VIZ : boxplot pré vs post-COVID côte à côte
+# NOTE VIZ : violin plot pour comparer les distributions complètes
