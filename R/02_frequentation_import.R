@@ -1,206 +1,205 @@
-# =============================================================
-# PROJET TPG OPEN DATA - Phase 1, Analyses 1.2 / 1.3 / 1.4
-# Fichier  : 02_frequentation_import.R
-# Objectif : Télécharger la fréquentation journalière par
-#            arrêt et par ligne, produire les tops 10 et
-#            analyser la distribution
-# Source   : https://opendata.tpg.ch
-# Date     : avril 2026
-# =============================================================
+# ============================================================
+# SCRIPT 02 — FRÉQUENTATION JOURNALIÈRE
+# Projet : TPG Open Data Analysis
+# Auteur : Frat DAG
+# Date   : avril 2026
+# ------------------------------------------------------------
+# OBJECTIF : Explorer la fréquentation journalière par arrêt
+# et par ligne. Identifier les arrêts et lignes dominants.
+# Ce qu'on sait déjà (script 00) :
+#   - Période : avr 2023 → avr 2026 (1.75M lignes)
+#   - Filtre donnees_definitives == TRUE obligatoire
+#   - ligne en numeric → convertir en character
+#   - 2 326 NA sur ligne (0.1%) → exclure analyses par ligne
+#   - nb_de_montees = décimaux (correction qualité TPG)
+# ============================================================
 
-# --- 1. Chargement des packages ------------------------------
-library(httr2)
-library(readr)
+# ── 1. PACKAGES ─────────────────────────────────────────────
+
 library(dplyr)
-library(janitor)
 library(ggplot2)
+library(scales)    # formatage des axes (millions, milliers)
 
-# --- 2. Paramètres de l'API ----------------------------------
+# ── 2. CHARGEMENT ───────────────────────────────────────────
 
-url_freq <- "https://opendata.tpg.ch/api/explore/v2.1/catalog/datasets/montees-par-arret-par-ligne/exports/csv"
+journalier <- readRDS("../data/raw/journalier.rds")
 
-# --- 3. Téléchargement ---------------------------------------
+cat("Dimensions brutes :", nrow(journalier), "lignes x",
+    ncol(journalier), "colonnes\n")
 
-message("Téléchargement de la fréquentation journalière...")
+# ── 3. FILTRE QUALITÉ ────────────────────────────────────────
+# Règle DEC-002 : donnees_definitives == TRUE systématique
+# On documente combien on perd avant de filtrer
 
-reponse <- request(url_freq) |>
-  req_url_query(
-    lang      = "fr",
-    delimiter = ";",
-    timezone  = "Europe/Zurich"
-  ) |>
-  req_perform()
+n_avant <- nrow(journalier)
 
-message("✓ Données reçues.")
+journalier <- journalier %>%
+  filter(donnees_definitives == TRUE) %>%
+  mutate(ligne = as.character(ligne))  # DEC-001 : ligne en character
 
-# --- 4. Chargement dans R ------------------------------------
+n_apres <- nrow(journalier)
 
-freq_raw <- resp_body_string(reponse) |>
-  read_delim(
-    delim          = ";",
-    locale         = locale(encoding = "UTF-8"),
-    show_col_types = FALSE
+cat("Après filtre qualité :", n_apres, "lignes\n")
+cat("Lignes provisoires exclues :", n_avant - n_apres,
+    "(", round((n_avant - n_apres) / n_avant * 100, 1), "%)\n")
+
+# ── 4. VÉRIFICATION PÉRIODE APRÈS FILTRE ────────────────────
+# On vérifie que le filtre n'a pas tronqué une période entière
+
+cat("Période couverte après filtre :\n")
+cat("  Du :", format(min(journalier$date)), "\n")
+cat("  Au :", format(max(journalier$date)), "\n")
+
+# Combien de dates distinctes ?
+cat("  Dates distinctes :", n_distinct(journalier$date), "\n")
+
+# Combien d'arrêts et de lignes distincts ?
+cat("  Arrêts distincts :", n_distinct(journalier$arret), "\n")
+cat("  Lignes distinctes :", n_distinct(journalier$ligne), "\n")
+cat("  Types de ligne :", n_distinct(journalier$ligne_type_act), "\n")
+print(sort(table(journalier$ligne_type_act), decreasing = TRUE))
+
+# ── 5. FRÉQUENTATION TOTALE PAR TYPE DE LIGNE ───────────────
+# Objectif : comprendre la structure du réseau avant d'aller
+# au niveau arrêt ou ligne individuelle
+# On agrège les montées totales par type — pas par date
+
+freq_par_type <- journalier %>%
+  group_by(ligne_type_act) %>%
+  summarise(
+    montees_totales = sum(nb_de_montees, na.rm = TRUE),
+    n_lignes        = n_distinct(ligne),
+    n_arrets        = n_distinct(arret)
+  ) %>%
+  mutate(
+    pct_montees = round(montees_totales / sum(montees_totales) * 100, 1),
+    montees_par_ligne = round(montees_totales / n_lignes)
+  ) %>%
+  arrange(desc(montees_totales))
+
+cat("=== FRÉQUENTATION PAR TYPE DE LIGNE ===\n\n")
+print(freq_par_type)
+
+# ── 6. TOP 10 ARRÊTS — MONTÉES TOTALES ──────────────────────
+# On agrège sur toute la période disponible
+# Filtre : exclure les NA sur arret (sécurité)
+
+top_arrets <- journalier %>%
+  filter(!is.na(arret)) %>%
+  group_by(arret) %>%
+  summarise(
+    montees_totales = sum(nb_de_montees, na.rm = TRUE),
+    n_lignes        = n_distinct(ligne)
+  ) %>%
+  arrange(desc(montees_totales)) %>%
+  slice_head(n = 10) %>%
+  mutate(
+    rang            = row_number(),
+    pct_du_total    = round(montees_totales / sum(journalier$nb_de_montees,
+                                                  na.rm = TRUE) * 100, 1)
   )
 
-# --- 5. Exploration initiale ---------------------------------
+cat("=== TOP 10 ARRÊTS ===\n\n")
+print(top_arrets)
 
-message("Dimensions : ", nrow(freq_raw), " lignes x ", ncol(freq_raw), " colonnes")
-message("Colonnes disponibles :")
-print(colnames(freq_raw))
-print(head(freq_raw, 5))
-
-# --- 6. Nettoyage de base ------------------------------------
-
-# janitor::clean_names() : déjà propres ici, mais bonne pratique systématique
-freq <- freq_raw |>
-  clean_names() |>
-  # On garde uniquement les données définitives pour les analyses
-  filter(donnees_definitives == TRUE)
-
-message("Lignes avec données définitives : ", nrow(freq))
-
-# --- 7. Analyse 1.2 — Top 10 arrêts les plus fréquentés -----
-
-# On agrège toutes les dates et lignes pour avoir le total par arrêt
-top10_arrets <- freq |>
-  group_by(arret) |>
+# TOP 10 LIGNES
+top_lignes <- journalier %>%
+  filter(!is.na(ligne)) %>%
+  group_by(ligne, ligne_type_act) %>%
   summarise(
-    total_montees = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  arrange(desc(total_montees)) |>
-  slice_head(n = 10)
+    montees_totales = sum(nb_de_montees, na.rm = TRUE),
+    n_arrets        = n_distinct(arret),
+    .groups         = "drop"
+  ) %>%
+  arrange(desc(montees_totales)) %>%
+  slice_head(n = 10) %>%
+  mutate(
+    rang         = row_number(),
+    pct_du_total = round(montees_totales / sum(journalier$nb_de_montees,
+                                               na.rm = TRUE) * 100, 1)
+  )
 
-print(top10_arrets)
+cat("\n=== TOP 10 LIGNES ===\n\n")
+print(top_lignes)
 
-# Visualisation
-ggplot(top10_arrets,
-       aes(x = reorder(arret, total_montees),
-           y = total_montees / 1000)) +
-  geom_col(fill = "#E30613") +
-  coord_flip() +
-  labs(
-    title    = "Top 10 des arrêts TPG les plus fréquentés",
-    subtitle = "Total des montées sur la période disponible",
-    x        = NULL,
-    y        = "Montées (en milliers)",
-    caption  = "Source : opendata.tpg.ch"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(plot.title = element_text(face = "bold"))
+# ── 7. BLOC DÉCISION — SCRIPT 02 ────────────────────────────
 
-ggsave("outputs/02_top10_arrets.png", width = 10, height = 6, dpi = 150)
-message("✓ Graphique sauvegardé : outputs/02_top10_arrets.png")
+# DÉCISION 1 — Structure du réseau : concentration massive sur PRINCIPAL
+# 23 lignes PRINCIPAL = 85% des montées
+# 56 lignes SECONDAIRE = 9.8% des montées
+# Le réseau est structurellement asymétrique — à documenter dans toute
+# communication publique sur l'efficacité des lignes
 
-# --- 8. Analyse 1.3 — Top 10 lignes les plus fréquentées ----
+# DÉCISION 2 — NOCTAMBUS REGIONAL = système en extinction
+# 0.0% des montées sur notre période (avr 2023 → fév 2026)
+# Explication : absorbé dans les lignes diurnes depuis déc 2023 (OBS-021)
+# Ne pas interpréter comme une désaffection du service nocturne
+# Les montées nocturnes sont désormais comptabilisées en PRINCIPAL/SECONDAIRE
 
-top10_lignes <- freq |>
-  group_by(ligne) |>
-  summarise(
-    total_montees = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  arrange(desc(total_montees)) |>
-  slice_head(n = 10)
+# DÉCISION 3 — Top 10 arrêts = 29.1% du trafic total
+# Top 10 lignes = 61% du trafic total
+# Ces chiffres posent la question de la concentration (T-007 — Gini)
+# À ne pas publier sans la courbe de Lorenz complète
 
-print(top10_lignes)
+# DÉCISION 4 — Cornavin (31 lignes), Bel-Air (29), Rive (28)
+# Ces arrêts sont des nœuds de correspondance, pas seulement des arrêts chargés
+# Leur fréquentation reflète les transferts entre lignes autant que les montées nettes
+# Limite : nb_de_montees ne distingue pas "montée directe" vs "montée après correspondance"
 
-# Visualisation
-ggplot(top10_lignes,
-       aes(x = reorder(ligne, total_montees),
-           y = total_montees / 1000)) +
-  geom_col(fill = "#E30613") +
-  coord_flip() +
-  labs(
-    title    = "Top 10 des lignes TPG les plus fréquentées",
-    subtitle = "Total des montées sur la période disponible",
-    x        = "Ligne",
-    y        = "Montées (en milliers)",
-    caption  = "Source : opendata.tpg.ch"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(plot.title = element_text(face = "bold"))
+# ── 8. VISUALISATION — BARPLOT TOP 10 ARRÊTS ────────────────
+# NOTE VIZ : ce graphique mérite une version finale en Python/Power BI
 
-ggsave("outputs/02_top10_lignes.png", width = 10, height = 6, dpi = 150)
-message("✓ Graphique sauvegardé : outputs/02_top10_lignes.png")
-
-# --- 9. Analyse 1.4 — Distribution de la fréquentation ------
-
-# Fréquentation totale par arrêt (toutes lignes et dates confondues)
-freq_par_arret <- freq |>
-  group_by(arret) |>
-  summarise(
-    total_montees = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  arrange(desc(total_montees))
-
-# Quelques statistiques descriptives
-cat("\n=== Distribution de la fréquentation par arrêt ===\n")
-cat("Nombre d'arrêts analysés :", nrow(freq_par_arret), "\n")
-cat("Moyenne montées/arrêt    :", round(mean(freq_par_arret$total_montees)), "\n")
-cat("Médiane montées/arrêt    :", round(median(freq_par_arret$total_montees)), "\n")
-cat("Arrêt max                :", freq_par_arret$arret[1], "-", round(freq_par_arret$total_montees[1]), "\n")
-cat("Arrêt min                :", freq_par_arret$arret[nrow(freq_par_arret)], "-", round(freq_par_arret$total_montees[nrow(freq_par_arret)]), "\n")
-
-# Histogramme de la distribution
-ggplot(freq_par_arret, aes(x = total_montees / 1000)) +
-  geom_histogram(fill = "#E30613", color = "white", bins = 50) +
-  scale_x_log10() +   # Échelle logarithmique — indispensable car distribution très asymétrique
-  labs(
-    title    = "Distribution de la fréquentation des arrêts TPG",
-    subtitle = "Échelle logarithmique — 3 ans de données (fév. 2023 – fév. 2026)",
-    x        = "Total montées (en milliers, échelle log)",
-    y        = "Nombre d'arrêts",
-    caption  = "Source : opendata.tpg.ch"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(plot.title = element_text(face = "bold"))
-
-ggsave("outputs/02_distribution_frequentation.png", width = 10, height = 6, dpi = 150)
-message("✓ Graphique sauvegardé : outputs/02_distribution_frequentation.png")
-
-# Version grand public — top 30 arrêts en barplot horizontal
-top30_arrets <- freq_par_arret |> slice_head(n = 30)
-
-ggplot(top30_arrets,
-       aes(x = reorder(arret, total_montees),
-           y = total_montees / 1000000)) +
-  geom_col(fill = "#E30613") +
-  geom_text(
-    aes(label = paste0(round(total_montees / 1000000, 1), "M")),
-    hjust    = -0.1,
-    size     = 3,
-    color    = "grey30"
-  ) +
+p_arrets <- ggplot(top_arrets,
+                   aes(x = reorder(arret, montees_totales),
+                       y = montees_totales / 1e6)) +
+  geom_col(fill = "#E30613", alpha = 0.85) +
+  geom_text(aes(label = paste0(pct_du_total, "%")),
+            hjust = -0.1, size = 3.5, color = "grey30") +
   coord_flip() +
   scale_y_continuous(
-    limits = c(0, 70),
-    labels = function(x) paste0(x, "M")
+    labels = label_number(suffix = "M"),
+    limits = c(0, 32)
   ) +
   labs(
-    title    = "Les 30 arrêts TPG les plus fréquentés",
-    subtitle = "Total des montées sur 3 ans (fév. 2023 – fév. 2026)",
+    title    = "Top 10 arrêts TPG par fréquentation",
+    subtitle = "Montées totales — avr 2023 à fév 2026 (données définitives)",
     x        = NULL,
-    y        = "Total montées (en millions)",
-    caption  = "Source : opendata.tpg.ch"
+    y        = "Millions de montées",
+    caption  = "Source : TPG Open Data | % = part du trafic total réseau"
   ) +
   theme_minimal(base_size = 12) +
   theme(
     plot.title    = element_text(face = "bold"),
-    plot.subtitle = element_text(color = "grey50"),
-    panel.grid.major.y = element_blank()  # Supprime grilles horizontales — plus épuré
+    panel.grid.major.y = element_blank()
   )
 
-ggsave("outputs/02_top30_arrets_grand_public.png",
-       width = 10, height = 10, dpi = 150)
-message("✓ Graphique grand public sauvegardé")
+print(p_arrets)
 
-# Part du trafic concentrée sur le top 10%
-seuil_top10 <- quantile(freq_par_arret$total_montees, 0.90)
-part_top10  <- freq_par_arret |>
-  filter(total_montees >= seuil_top10) |>
-  summarise(part = sum(total_montees) / sum(freq_par_arret$total_montees) * 100)
+p_lignes <- ggplot(top_lignes,
+                   aes(x = reorder(ligne, montees_totales),
+                       y = montees_totales / 1e6)) +
+  geom_col(fill = "#E30613", alpha = 0.85) +
+  geom_text(aes(label = paste0(pct_du_total, "%")),
+            hjust = -0.1, size = 3.5, color = "grey30") +
+  coord_flip() +
+  scale_y_continuous(
+    labels = label_number(suffix = "M"),
+    limits = c(0, 46)
+  ) +
+  labs(
+    title    = "Top 10 lignes TPG par fréquentation",
+    subtitle = "Montées totales — avr 2023 à fév 2026 (données définitives)",
+    x        = "Ligne",
+    y        = "Millions de montées",
+    caption  = "Source : TPG Open Data | % = part du trafic total réseau\nToutes les lignes sont de type PRINCIPAL"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title         = element_text(face = "bold"),
+    panel.grid.major.y = element_blank()
+  )
 
-cat("\nLes 10% d'arrêts les plus fréquentés concentrent",
-    round(part_top10$part, 1), "% du trafic total\n")
+print(p_lignes)
+
+ggsave("../outputs/02_top10_lignes.png",
+       plot = p_lignes, width = 10, height = 6, dpi = 150)
