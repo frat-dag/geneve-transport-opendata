@@ -145,3 +145,89 @@ cat("  Dont côté CH :", sum(douanes$pays == "CH"), "\n")
 # latitude et longitude : numeric ✅
 # actif : "Y" (1 928) ou "N" (2 558)
 # codedidoc : NA pour arrêts techniques uniquement
+
+
+# ── 4. CARTE LEAFLET ─────────────────────────────────────────
+
+# Séparation actifs / inactifs
+actifs   <- arrets_clean %>% filter(actif == "Y")
+inactifs <- arrets_clean %>% filter(actif == "N")
+
+cat("Arrêts actifs   :", nrow(actifs), "\n")
+cat("Arrêts inactifs :", nrow(inactifs), "\n")
+
+# Construction de la carte
+carte_arrets <- leaflet() %>%
+  
+  # Fond de carte OpenStreetMap
+  addTiles() %>%
+  
+  # Couche 1 — Arrêts actifs (rouge TPG)
+  addCircleMarkers(
+    data        = actifs,
+    lng         = ~longitude,
+    lat         = ~latitude,
+    radius      = 4,
+    color       = "#E30613",
+    fillColor   = "#E30613",
+    fillOpacity = 0.8,
+    weight      = 1,
+    popup       = ~paste0(
+      "<b>", nomarret, "</b><br>",
+      "Commune : ", commune, "<br>",
+      "Pays : ", pays, "<br>",
+      "Code : ", arretcodelong
+    ),
+    group = "Arrêts actifs (1 928)"
+  ) %>%
+  
+  # Couche 2 — Arrêts inactifs (bleu ardoise)
+  addCircleMarkers(
+    data        = inactifs,
+    lng         = ~longitude,
+    lat         = ~latitude,
+    radius      = 3,
+    color       = "#4A6FA5",
+    fillColor   = "#4A6FA5",
+    fillOpacity = 0.5,
+    weight      = 1,
+    popup       = ~paste0(
+      "<b>", nomarret, "</b><br>",
+      "Commune : ", commune, "<br>",
+      "Pays : ", pays, "<br>",
+      "Code : ", arretcodelong, "<br>",
+      "<i>Arrêt inactif</i>"
+    ),
+    group = "Arrêts inactifs (2 558)"
+  ) %>%
+  
+  # Contrôle des couches — on/off
+  addLayersControl(
+    overlayGroups = c("Arrêts actifs (1 928)", "Arrêts inactifs (2 558)"),
+    options       = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  
+  # Légende
+  addLegend(
+    position = "bottomright",
+    colors   = c("#E30613", "#4A6FA5"),
+    labels   = c("Actifs (1 928)", "Inactifs (2 558)"),
+    title    = "Arrêts TPG",
+    opacity  = 0.8
+  )
+
+# Sauvegarde
+dir.create("../outputs", showWarnings = FALSE)
+saveWidget(carte_arrets, "../outputs/01_carte_arrets_tpg.html",
+           selfcontained = TRUE)
+
+message("Carte sauvegardée : outputs/01_carte_arrets_tpg.html")
+
+carte_arrets
+
+
+# Vérification — arrêts sans nom dans le dataset final
+sans_nom <- arrets_clean %>% filter(is.na(nomarret))
+cat("Arrêts sans nom :", nrow(sans_nom), "\n")
+cat("Dont actifs     :", sum(sans_nom$actif == "Y"), "\n")
+cat("Dont inactifs   :", sum(sans_nom$actif == "N"), "\n")
