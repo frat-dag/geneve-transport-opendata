@@ -1,161 +1,147 @@
-# =============================================================
-# PROJET TPG OPEN DATA - Phase 1, Analyse 1.1
-# Fichier  : 01_arrets_import.R
-# Objectif : Télécharger les arrêts du réseau TPG,
-#            explorer la structure et produire une
-#            première carte interactive Leaflet
-# Source   : https://opendata.tpg.ch
-# Date     : avril 2026
-# =============================================================
+# ============================================================
+# SCRIPT 01 — IMPORT ET NETTOYAGE DES ARRÊTS TPG
+# Projet : TPG Open Data Analysis
+# Auteur : Frat DAG
+# Date   : avril 2026
+# ------------------------------------------------------------
+# OBJECTIF : Charger le dataset arrêts, le nettoyer, produire
+# la carte Leaflet de référence du réseau.
+# Ce qu'on sait déjà (script 00) :
+#   - coordonnees = chaîne unique à séparer en lat/lon
+#   - 148 arrêts sans coordonnées → à exclure + documenter
+#   - 688 arrêts sans codedidoc → à inventorier
+#   - colonne actif = "Y" ou "N" (character)
+# ============================================================
 
-# --- 1. Chargement des packages ------------------------------
-library(httr2)       # Appels API REST — remplace l'ancien package httr
-library(readr)       # Lecture rapide de fichiers CSV avec gestion encodage
-library(dplyr)       # Manipulation de données : filter, mutate, summarise...
-library(janitor)     # Nettoyage des noms de colonnes (clean_names)
-library(leaflet)     # Cartes interactives dans RStudio et HTML
-library(htmlwidgets) # Sauvegarde des widgets interactifs en fichier HTML
+# ── 1. PACKAGES ─────────────────────────────────────────────
 
-# --- 2. Paramètres de l'API ----------------------------------
+library(dplyr)
+library(tidyr)
+library(readr)
+library(leaflet)
+library(htmlwidgets)
 
-# URL de l'endpoint export CSV (pas de limite de lignes)
-url_arrets <- "https://opendata.tpg.ch/api/explore/v2.1/catalog/datasets/arrets/exports/csv"
+# ── 2. CHARGEMENT ───────────────────────────────────────────
+# On charge depuis le .rds sauvegardé en script 00
+# Plus rapide que retélécharger — types déjà préservés
 
-# --- 3. Téléchargement ---------------------------------------
+arrets <- readRDS("../data/raw/arrets.rds")
 
-message("Téléchargement des arrêts TPG...")
+cat("Dimensions :", nrow(arrets), "lignes x", ncol(arrets), "colonnes\n")
 
-reponse <- request(url_arrets) |>
-  req_url_query(
-    lang      = "fr",
-    delimiter = ";",
-    timezone  = "Europe/Zurich"
-  ) |>
-  req_perform()
+# ── 3. NETTOYAGE ─────────────────────────────────────────────
 
-message("✓ Données reçues.")
+# ÉTAPE 3.1 — Séparer coordonnees en latitude + longitude
+# La colonne contient "46.220238, 6.226213" — on sépare sur ", "
+# separate() de tidyr fait exactement ça proprement
 
-# --- 4. Chargement dans R ------------------------------------
-
-arrets_raw <- resp_body_string(reponse) |>
-  read_delim(
-    delim          = ";",
-    locale         = locale(encoding = "UTF-8"),
-    show_col_types = FALSE
+arrets_clean <- arrets %>%
+  separate(
+    col   = coordonnees,
+    into  = c("latitude", "longitude"),
+    sep   = ", ",
+    convert = TRUE    # convertit automatiquement en numeric
   )
 
-# --- 5. Exploration initiale ---------------------------------
+# Vérification : les types sont-ils bien numeric ?
+cat("Type latitude  :", class(arrets_clean$latitude), "\n")
+cat("Type longitude :", class(arrets_clean$longitude), "\n")
 
-# Nombre de lignes et colonnes
-message("Dimensions : ", nrow(arrets_raw), " arrêts x ", ncol(arrets_raw), " colonnes")
+# ÉTAPE 3.2 — Inventaire AVANT exclusion
+# On regarde ce qu'on va perdre avant de filtrer
+# Règle : ne jamais exclure sans avoir d'abord compté et caractérisé
 
-# Noms des colonnes — IMPORTANT : on adaptera le code selon ce qu'on voit ici
-message("Colonnes disponibles :")
-print(colnames(arrets_raw))
+sans_coords <- arrets_clean %>% filter(is.na(latitude))
+avec_coords <- arrets_clean %>% filter(!is.na(latitude))
 
-# Aperçu des premières lignes
-print(head(arrets_raw, 5))
+cat("\n--- Arrêts sans coordonnées ---\n")
+cat("Total          :", nrow(sans_coords), "\n")
+cat("Dont actifs    :", sum(sans_coords$actif == "Y"), "\n")
+cat("Dont inactifs  :", sum(sans_coords$actif == "N"), "\n")
 
-# --- 6. Nettoyage et préparation -----------------------------
-
-arrets <- arrets_raw |>
-  # Séparer les coordonnées en latitude et longitude
-  mutate(
-    latitude  = as.numeric(sub(",.*", "", coordonnees)),
-    longitude = as.numeric(sub(".*, ", "", coordonnees))
-  ) |>
-  # Garder uniquement les arrêts avec coordonnées valides
-  filter(!is.na(latitude), !is.na(longitude))
-
-# Résumé rapide
-cat("\n=== Résumé du réseau TPG ===\n")
-cat("Total arrêts          :", nrow(arrets_raw), "\n")
-cat("Arrêts géolocalisés   :", nrow(arrets), "\n")
-cat("Arrêts actifs (Y)     :", sum(arrets$actif == "Y"), "\n")
-cat("Arrêts inactifs (N)   :", sum(arrets$actif == "N"), "\n")
-cat("Communes distinctes   :", n_distinct(arrets$commune), "\n")
-cat("Pays représentés      :", paste(unique(arrets$pays), collapse = ", "), "\n")
-
-# --- 7. Sauvegarde des données -------------------------------
-
-dir.create("data/raw",       recursive = TRUE, showWarnings = FALSE)
-dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
-
-write_csv2(arrets_raw, "data/raw/arrets_raw.csv")
-write_csv2(arrets,     "data/processed/arrets_clean.csv")
-
-message("✓ Données sauvegardées dans data/raw/ et data/processed/")
+cat("\n--- Arrêts avec coordonnées ---\n")
+cat("Total          :", nrow(avec_coords), "\n")
+cat("Dont actifs    :", sum(avec_coords$actif == "Y"), "\n")
+cat("Dont inactifs  :", sum(avec_coords$actif == "N"), "\n")
 
 
-# --- 8. Carte interactive Leaflet ----------------------------
 
-message("Génération de la carte interactive...")
+# ÉTAPE 3.3 — Exclusion documentée des arrêts sans coordonnées
+# Tous inactifs (vérification étape 3.2) → exclusion sans impact analytique
 
-# On crée deux couches : arrêts actifs et inactifs
-arrets_actifs   <- arrets |> filter(actif == "Y")
-arrets_inactifs <- arrets |> filter(actif == "N")
+arrets_clean <- arrets_clean %>%
+  filter(!is.na(latitude))
 
-carte <- leaflet() |>
-  addTiles() |>  # Fond de carte OpenStreetMap
-  # Arrêts actifs en rouge TPG
-  addCircleMarkers(
-    data        = arrets_actifs,
-    lng         = ~longitude,
-    lat         = ~latitude,
-    radius      = 5,
-    color       = "#E30613",
-    fillColor   = "#E30613",
-    stroke      = FALSE,
-    fillOpacity = 0.8,
-    popup       = ~paste0(
-      "<b>", nomarret, "</b><br>",
-      "Commune : ", commune, "<br>",
-      "Pays : ", pays, "<br>",
-      "Code : ", arretcodelong, "<br>",
-      "<span style='color:green'>● Actif</span>"
-    ),
-    group = "Arrêts actifs"
-  ) |>
-  # Arrêts inactifs en bleu foncé
-  addCircleMarkers(
-    data        = arrets_inactifs,
-    lng         = ~longitude,
-    lat         = ~latitude,
-    radius      = 5,
-    fillOpacity = 0.8,
-    stroke      = TRUE,
-    color       = "#2C4A7C",   # Bordure légèrement plus foncée
-    weight      = 1,
-    fillColor   = "#4A6FA5",
-    popup       = ~paste0(
-      "<b>", nomarret, "</b><br>",
-      "Commune : ", commune, "<br>",
-      "Pays : ", pays, "<br>",
-      "Code : ", arretcodelong, "<br>",
-      "<span style='color:red'>● Inactif</span>"
-    ),
-    group = "Arrêts inactifs"
-  ) |>
-  # Contrôle des couches — on peut afficher/masquer chaque groupe
-  addLayersControl(
-    overlayGroups = c("Arrêts actifs", "Arrêts inactifs"),
-    options       = layersControlOptions(collapsed = FALSE)
-  ) |>
-  # Légende
-  addLegend(
-    position = "bottomright",
-    colors   = c("#E30613", "#4A6FA5"),
-    labels   = c(
-      paste0("Actifs (", nrow(arrets_actifs), ")"),
-      paste0("Inactifs (", nrow(arrets_inactifs), ")")
-    ),
-    title    = "Arrêts TPG"
-  )
+cat("Dataset nettoyé :", nrow(arrets_clean), "arrêts\n")
+cat("Exclus          : 148 arrêts inactifs sans coordonnées\n")
 
-# Afficher dans RStudio
-print(carte)
+# ÉTAPE 3.4 — Inventaire codedidoc manquant
+# Même logique : compter et caractériser avant de conclure
 
-# Sauvegarder en HTML
-dir.create("outputs", showWarnings = FALSE)
-saveWidget(carte, "outputs/01_carte_arrets_tpg.html", selfcontained = TRUE)
-message("✓ Carte sauvegardée : outputs/01_carte_arrets_tpg.html")
+sans_didoc <- arrets_clean %>% filter(is.na(codedidoc))
+
+cat("\n--- Arrêts sans codedidoc ---\n")
+cat("Total         :", nrow(sans_didoc), "\n")
+cat("Dont actifs   :", sum(sans_didoc$actif == "Y"), "\n")
+cat("Dont inactifs :", sum(sans_didoc$actif == "N"), "\n")
+cat("Communes concernées :\n")
+print(sort(table(sans_didoc$commune), decreasing = TRUE))
+
+# ÉTAPE 3.5 — Focus sur les 29 arrêts actifs sans codedidoc
+# Ce sont les seuls problématiques — les inactifs sans codedidoc
+# n'ont aucun impact sur nos analyses
+
+names(arrets_clean)
+
+actifs_sans_didoc <- arrets_clean %>%
+  filter(is.na(codedidoc), actif == "Y") %>%
+  dplyr::select(arretcodelong, nomarret, commune, pays)
+
+cat("--- 29 arrêts ACTIFS sans codedidoc ---\n")
+print(actifs_sans_didoc, n = 29)
+
+
+# ÉTAPE 3.6 — Documentation des 29 arrêts actifs sans codedidoc
+# Deux catégories identifiées :
+#   - Points de douane CH/FR (arrêts techniques transfrontaliers)
+#   - Dépôts TPG (sites de remisage — pas des arrêts commerciaux)
+# Conclusion : absence de codedidoc structurellement justifiée
+# Impact Phase 4 : nul — ces arrêts n'apparaissent pas dans GTFS-RT
+
+cat("Répartition par pays — arrêts actifs sans codedidoc :\n")
+print(table(actifs_sans_didoc$pays))
+
+depots <- actifs_sans_didoc %>%
+  filter(grepl("^D[A-Z]00", arretcodelong))
+cat("\nDépôts TPG identifiés :", nrow(depots), "\n")
+print(depots$nomarret)
+
+douanes <- actifs_sans_didoc %>%
+  filter(!grepl("^D[A-Z]00", arretcodelong))
+cat("\nPoints de douane identifiés :", nrow(douanes), "\n")
+cat("  Dont côté FR :", sum(douanes$pays == "FR"), "\n")
+cat("  Dont côté CH :", sum(douanes$pays == "CH"), "\n")
+
+# ══════════════════════════════════════════════════════════════
+# BLOC DÉCISION — SCRIPT 01
+# ══════════════════════════════════════════════════════════════
+
+# DÉCISION 1 — 148 arrêts exclus (sans coordonnées)
+# Tous inactifs → exclusion sans impact analytique
+# Dataset final : 4 486 arrêts géolocalisés
+
+# DÉCISION 2 — 29 arrêts actifs sans codedidoc
+# Structurellement justifié — deux catégories :
+#   - 26 points de douane transfrontaliers (13 paires CH/FR symétriques)
+#   - 3 dépôts TPG (Bachet, En-Chardon, Jonction)
+# Ces arrêts n'ont pas vocation à avoir un codedidoc
+# Impact Phase 4 : nul — absents du GTFS-RT par nature
+# À documenter dans le README : "les arrêts techniques
+# (douanes + dépôts) sont inclus dans le dataset mais
+# exclus des analyses de fréquentation"
+
+# DÉCISION 3 — Structure du dataset final arrets_clean
+# 4 486 lignes x 8 colonnes
+# latitude et longitude : numeric ✅
+# actif : "Y" (1 928) ou "N" (2 558)
+# codedidoc : NA pour arrêts techniques uniquement
