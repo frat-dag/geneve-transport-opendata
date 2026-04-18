@@ -1,273 +1,351 @@
-# =============================================================
-# PROJET TPG OPEN DATA - Script 00 — Exploration générale
-# Fichier  : 00_exploration_generale.R
-# Objectif : Analyse exploratoire complète (EDA) de tous
-#            les datasets TPG avant toute modélisation
-#            — inventaire des datasets
-#            — qualité des données (NA, doublons, outliers)
-#            — cohérence entre datasets
-#            — statistiques descriptives formelles
-#            — rapport de qualité
-# Date     : avril 2026
-# Note     : Ce script consolide l'analyse exploratoire (EDA)
-#            conduite au fil du projet. Dans une démarche
-#            exploratoire, l'EDA formelle émerge naturellement
-#            après une première phase d'exploration qui permet
-#            de cibler les vérifications sur les dimensions
-#            réellement pertinentes.
-#            À exécuter avant toute nouvelle analyse.
-# =============================================================
+# Nettoyage de l'environnement
+#rm(list = ls())
 
-# --- 1. Packages ---------------------------------------------
-library(httr2)       # Appels API REST
-library(readr)       # Lecture CSV
-library(dplyr)       # Manipulation données
-library(tidyr)       # Mise en forme
-library(ggplot2)     # Visualisations
-library(lubridate)   # Dates
-library(janitor)     # Nettoyage noms colonnes
+# Répertoire de travail
+#setwd("D:/Frat/Documents/IA/Claude/Projet TPG/tpg-opendata-analysis/R")
 
-# --- 2. Fonction utilitaire — rapport qualité dataset --------
-# Cette fonction calcule les indicateurs de qualité pour
-# n'importe quel dataset — on l'utilisera pour tous les datasets
+# ============================================================
+# SCRIPT 00 — EXPLORATION GÉNÉRALE DES DONNÉES TPG
+# Projet : TPG Open Data Analysis
+# Auteur : Frat DAG
+# Date   : avril 2026
+# ------------------------------------------------------------
+# OBJECTIF : Inventaire complet de tous les datasets avant
+# toute analyse. Les résultats de ce script guident tous
+# les scripts suivants.
+# ============================================================
 
-rapport_qualite <- function(df, nom_dataset) {
-  cat("\n", paste(rep("=", 60), collapse = ""), "\n")
-  cat("DATASET :", nom_dataset, "\n")
-  cat(paste(rep("=", 60), collapse = ""), "\n")
-  cat("Dimensions       :", nrow(df), "lignes x", ncol(df), "colonnes\n")
-  cat("Taille mémoire   :", format(object.size(df), units = "MB"), "\n\n")
+
+# ── 1. PACKAGES ─────────────────────────────────────────────
+
+library(httr2)      # Requêtes HTTP vers l'API TPG
+library(readr)      # Lecture et parsing des CSV
+library(dplyr)      # Manipulation de données
+library(tidyr)      # Nettoyage et restructuration
+library(janitor)    # Nettoyage des noms de colonnes
+
+
+# ── 2. PARAMÈTRES GLOBAUX ───────────────────────────────────
+
+# URL de base de l'API TPG (endpoint exports — pas de limite de lignes)
+BASE_URL <- "https://opendata.tpg.ch/api/explore/v2.1/catalog/datasets"
+
+# Paramètres communs à toutes les requêtes
+PARAMS <- list(
+  lang      = "fr",
+  delimiter = ";",
+  timezone  = "Europe/Zurich"
+)
+
+# ── 3. FONCTION DE TÉLÉCHARGEMENT ───────────────────────────
+
+# Télécharge un dataset TPG complet via l'endpoint exports/csv
+# Paramètres :
+#   dataset_id : identifiant du dataset dans l'API (ex: "arrets")
+#   n_max      : nombre max de lignes (Inf = tout télécharger)
+# Retourne : un tibble, ou arrête le script avec un message d'erreur clair
+
+fetch_dataset <- function(dataset_id, n_max = Inf) {
   
-  cat("--- Structure des colonnes ---\n")
+  url <- paste0(BASE_URL, "/", dataset_id, "/exports/csv")
+  
+  message("Téléchargement : ", dataset_id, " ...")
+  
+  result <- tryCatch({
+    read_delim(
+      url,
+      delim         = ";",
+      locale        = locale(encoding = "UTF-8",
+                             tz       = "Europe/Zurich"),
+      n_max         = n_max,
+      show_col_types = FALSE
+    )
+  }, error = function(e) {
+    stop("Erreur sur le dataset '", dataset_id, "' : ", e$message)
+  })
+  
+  message("  -> ", nrow(result), " lignes x ", ncol(result), " colonnes")
+  return(result)
+}
+
+# ── 4. TÉLÉCHARGEMENT — ÉCHANTILLON (1000 lignes) ───────────
+# Objectif : inspecter la structure de chaque dataset
+# avant de télécharger l'intégralité
+
+arrets_raw        <- fetch_dataset("arrets",                                        n_max = 1000)
+journalier_raw    <- fetch_dataset("montees-par-arret-par-ligne",                   n_max = 1000)
+mensuel_raw       <- fetch_dataset("montees-mensuelles-par-arret-par-ligne",        n_max = 1000)
+horaire_raw       <- fetch_dataset("frequentation-journaliere-par-tranche-horaire", n_max = 1000)
+mn_raw            <- fetch_dataset("mn_montees-par-arret-par-ligne-par-tranchehoraire", n_max = 1000)
+km_prod_raw       <- fetch_dataset("kilometres-produits-journaliers-par-ligne",     n_max = 1000)
+collisions_raw    <- fetch_dataset("collisions-tpg-avec-tiers",                     n_max = 1000)
+
+# ── 5. INSPECTION DE LA STRUCTURE ───────────────────────────
+# Objectif : pour chaque dataset, afficher les colonnes,
+# leur type, et un aperçu des valeurs — sans encore analyser
+
+inspecter <- function(df, nom) {
+  cat("\n", strrep("=", 60), "\n")
+  cat("DATASET :", nom, "\n")
+  cat(strrep("=", 60), "\n")
+  cat("Dimensions :", nrow(df), "lignes x", ncol(df), "colonnes\n\n")
+  
+  # Pour chaque colonne : type + 3 premières valeurs distinctes
   for (col in names(df)) {
-    n_na      <- sum(is.na(df[[col]]))
-    pct_na    <- round(n_na / nrow(df) * 100, 1)
-    n_unique  <- n_distinct(df[[col]])
-    type_col  <- class(df[[col]])[1]
-    cat(sprintf("  %-35s [%s] NA: %d (%.1f%%) Unique: %d\n",
-                col, type_col, n_na, pct_na, n_unique))
+    vals <- unique(df[[col]])
+    vals <- vals[!is.na(vals)]
+    apercu <- paste(head(vals, 3), collapse = " | ")
+    cat(sprintf("  %-45s [%s]  %s\n",
+                col,
+                class(df[[col]])[1],
+                apercu))
   }
+}
+
+inspecter(arrets_raw,     "arrets")
+inspecter(journalier_raw, "montees-journalier")
+inspecter(mensuel_raw,    "montees-mensuel")
+inspecter(horaire_raw,    "frequentation-horaire")
+inspecter(mn_raw,         "mn-lignes-MN")
+inspecter(km_prod_raw,    "km-produits")
+inspecter(collisions_raw, "collisions")
+
+# ── 6. VALEURS MANQUANTES ────────────────────────────────────
+# Objectif : quantifier les NA par colonne et par dataset
+# Un NA ignoré maintenant = un biais silencieux plus tard
+
+compter_na <- function(df, nom) {
+  cat("\n", strrep("=", 60), "\n")
+  cat("DATASET :", nom, "\n")
+  cat(strrep("=", 60), "\n")
   
-  # Doublons
-  n_doublons <- nrow(df) - nrow(distinct(df))
-  cat("\n--- Doublons ---\n")
-  cat("Lignes dupliquées :", n_doublons,
-      ifelse(n_doublons == 0, "✓ Aucun doublon", "⚠ ATTENTION"), "\n")
+  na_counts <- df %>%
+    summarise(across(everything(), ~ sum(is.na(.)))) %>%
+    pivot_longer(everything(),
+                 names_to  = "colonne",
+                 values_to = "nb_na") %>%
+    mutate(pct_na = round(nb_na / nrow(df) * 100, 1)) %>%
+    filter(nb_na > 0) %>%
+    arrange(desc(nb_na))
   
-  cat("\n")
+  if (nrow(na_counts) == 0) {
+    cat("  Aucun NA détecté sur cet échantillon\n")
+  } else {
+    for (i in seq_len(nrow(na_counts))) {
+      cat(sprintf("  %-45s %d NA  (%s%%)\n",
+                  na_counts$colonne[i],
+                  na_counts$nb_na[i],
+                  na_counts$pct_na[i]))
+    }
+  }
 }
 
-# --- 3. Téléchargement de tous les datasets ------------------
+compter_na(arrets_raw,     "arrets")
+compter_na(journalier_raw, "montees-journalier")
+compter_na(mensuel_raw,    "montees-mensuel")
+compter_na(horaire_raw,    "frequentation-horaire")
+compter_na(mn_raw,         "mn-lignes-MN")
+compter_na(km_prod_raw,    "km-produits")
+compter_na(collisions_raw, "collisions")
 
-message("Téléchargement des datasets TPG...")
 
-# Fonction générique de téléchargement
-telecharger_dataset <- function(dataset_id) {
-  url <- paste0(
-    "https://opendata.tpg.ch/api/explore/v2.1/catalog/datasets/",
-    dataset_id, "/exports/csv"
-  )
-  reponse <- request(url) |>
-    req_url_query(lang = "fr", delimiter = ";",
-                  timezone = "Europe/Zurich") |>
-    req_perform()
-  resp_body_string(reponse) |>
-    read_delim(delim = ";", locale = locale(encoding = "UTF-8"),
-               show_col_types = FALSE)
+# ── 7. BLOC DÉCISION ─────────────────────────────────────────
+# Ce qu'on a appris — ce que ça implique pour les scripts suivants
+# Ce bloc est la mémoire de l'EDA. On le met à jour si on découvre
+# de nouvelles anomalies dans les scripts suivants.
+
+# DÉCISION 1 — codedidoc (arrets, ~16% NA)
+# Impact Phase 1-3 : aucun — on n'utilise pas ce code dans ces phases
+# Impact Phase 4   : critique — les arrêts sans codedidoc ne pourront
+#                    pas être joints aux données GTFS-RT temps réel
+# Action           : inventorier ces arrêts (actifs ou inactifs ?)
+#                    avant de démarrer la Phase 4
+
+# DÉCISION 2 — coordonnees (arrets, 3.3% NA)
+# Impact           : ces arrêts seront exclus de toutes les cartes
+# Action           : exclusion silencieuse documentée dans script 01
+#                    vérifier si ces arrêts sont actifs ou inactifs
+
+# DÉCISION 3 — ligne (mensuel, 2.8% NA)
+# Impact           : lignes non identifiables — exclure des analyses
+#                    par ligne. Ne PAS exclure des totaux globaux
+#                    sans vérifier si ces NA représentent un volume
+#                    significatif de montées
+# Action           : investiguer en script 03 (évolution temporelle)
+
+# DÉCISION 4 — type de colonne "ligne" incohérent entre datasets
+# journalier : numeric | mensuel : character | collisions : character
+# Impact           : toute jointure entre ces datasets produira des
+#                    NA silencieux si on ne convertit pas d'abord
+# Action           : dans chaque script de jointure, convertir "ligne"
+#                    en character AVANT la jointure — convention retenue
+
+# DÉCISION 5 — sens (collisions, 9.2% NA)
+# Hypothèse        : collisions hors ligne (dépôt, manœuvre)
+# Impact           : analyses par sens de circulation biaisées
+# Action           : traiter ces NA comme une catégorie "hors ligne"
+#                    dans le script collisions — ne pas les exclure
+
+# DÉCISION 6 — données provisoires (donnees_definitives == FALSE)
+# Vu dans horaire : TRUE et FALSE coexistent
+# Action           : filtrer sur donnees_definitives == TRUE
+#                    dans TOUS les scripts d'analyse — sans exception
+
+
+# ── 8. TÉLÉCHARGEMENT COMPLET ────────────────────────────────
+# On télécharge maintenant l'intégralité de chaque dataset
+# La structure est connue — on sait ce qu'on va recevoir
+
+message("Début du téléchargement complet — patience...")
+
+arrets        <- fetch_dataset("arrets")
+journalier    <- fetch_dataset("montees-par-arret-par-ligne")
+mensuel       <- fetch_dataset("montees-mensuelles-par-arret-par-ligne")
+horaire       <- fetch_dataset("frequentation-journaliere-par-tranche-horaire")
+mn            <- fetch_dataset("mn_montees-par-arret-par-ligne-par-tranchehoraire")
+km_prod       <- fetch_dataset("kilometres-produits-journaliers-par-ligne")
+collisions    <- fetch_dataset("collisions-tpg-avec-tiers")
+
+message("Téléchargement complet terminé.")
+
+
+# ── 9. VÉRIFICATION DES PÉRIODES COUVERTES ──────────────────
+# Objectif : confirmer les dates de début et fin de chaque dataset
+# Les dimensions ne suffisent pas — on veut savoir QUAND
+
+verifier_periode <- function(df, nom, col_date) {
+  if (!col_date %in% names(df)) {
+    cat(nom, ": colonne", col_date, "absente\n")
+    return()
+  }
+  dates <- df[[col_date]]
+  cat(sprintf("%-30s  du %s  au %s  (%d lignes)\n",
+              nom,
+              format(min(dates, na.rm = TRUE)),
+              format(max(dates, na.rm = TRUE)),
+              nrow(df)))
 }
 
-# Téléchargement de chaque dataset
-message("1/5 — Arrêts...")
-arrets_raw <- telecharger_dataset("arrets")
+cat("\n=== PÉRIODES COUVERTES ===\n\n")
+verifier_periode(arrets,     "arrets",      "actif")       # pas de date
+verifier_periode(journalier, "journalier",  "date")
+verifier_periode(mensuel,    "mensuel",     "mois")
+verifier_periode(horaire,    "horaire",     "date")
+verifier_periode(mn,         "mn",          "date")
+verifier_periode(km_prod,    "km_prod",     "date")
+verifier_periode(collisions, "collisions",  "jour")
 
-message("2/5 — Fréquentation journalière...")
-freq_jour_raw <- telecharger_dataset("montees-par-arret-par-ligne")
 
-message("3/5 — Fréquentation mensuelle...")
-freq_mois_raw <- telecharger_dataset("montees-mensuelles-par-arret-par-ligne")
+# ── 10. MISE À JOUR BLOC DÉCISION — PÉRIODES ────────────────
 
-message("4/5 — Fréquentation horaire...")
-freq_heure_raw <- telecharger_dataset("frequentation-journaliere-par-tranche-horaire")
+# DÉCISION 7 — Journalier limité à 1.75M lignes (avr 2023 → avr 2026)
+# Le dataset journalier ne remonte pas à fév 2023 comme documenté initialement
+# et semble limité à 1.75M de lignes par l'API.
+# Impact : les analyses de fréquentation fine (par arrêt × ligne × jour)
+# ne couvrent que 3 ans. Pour les tendances longues → utiliser le mensuel.
+# Règle : journalier = analyses détaillées récentes
+#          mensuel   = tendances historiques (2016-2026)
 
-message("5/5 — Kilomètres produits...")
-km_raw <- telecharger_dataset("kilometres-produits-journaliers-par-ligne")
+# DÉCISION 8 — Dataset mn : périmètre restreint (CCG, mar 2024 → avr 2026)
+# Ce dataset ne couvre que 2 ans et uniquement le réseau CCG.
+# Il ne peut PAS être utilisé pour des analyses représentatives du réseau TPG.
+# Usage limité : analyse spécifique des lignes M et N du pays de Gex.
 
-message("✓ Tous les datasets téléchargés.")
+# DÉCISION 9 — Collisions : le dataset le plus long (2015-2026, 11 ans)
+# C'est le seul dataset qui remonte avant 2016.
+# Potentiel fort pour les analyses de tendance sécurité long terme.
 
-# --- 4. Rapport de qualité — dataset par dataset -------------
 
-rapport_qualite(arrets_raw,     "Arrêts du réseau")
-rapport_qualite(freq_jour_raw,  "Fréquentation journalière par arrêt/ligne")
-rapport_qualite(freq_mois_raw,  "Fréquentation mensuelle par arrêt/ligne")
-rapport_qualite(freq_heure_raw, "Fréquentation par tranche horaire")
-rapport_qualite(km_raw,         "Kilomètres produits par ligne")
+# ── 11. VALEURS MANQUANTES — DONNÉES COMPLÈTES ──────────────
+# Objectif : confirmer que les NA observés sur l'échantillon
+# se retrouvent sur l'intégralité des données
 
-# --- 5. Statistiques descriptives formelles ------------------
+cat("\n=== VALEURS MANQUANTES — DONNÉES COMPLÈTES ===\n")
 
-cat(paste(rep("=", 60), collapse = ""), "\n")
-cat("STATISTIQUES DESCRIPTIVES FORMELLES\n")
-cat(paste(rep("=", 60), collapse = ""), "\n")
+compter_na(arrets,     "arrets")
+compter_na(journalier, "montees-journalier")
+compter_na(mensuel,    "montees-mensuel")
+compter_na(horaire,    "frequentation-horaire")
+compter_na(mn,         "mn-lignes-MN")
+compter_na(km_prod,    "km-produits")
+compter_na(collisions, "collisions")
 
-# 5.1 — Arrêts
-cat("\n--- Arrêts ---\n")
-cat("Total arrêts historiques :", nrow(arrets_raw), "\n")
-cat("Arrêts actifs (Y)        :", sum(arrets_raw$actif == "Y", na.rm = TRUE), "\n")
-cat("Arrêts inactifs (N)      :", sum(arrets_raw$actif == "N", na.rm = TRUE), "\n")
-cat("Communes distinctes      :", n_distinct(arrets_raw$commune), "\n")
-cat("Pays                     :", paste(unique(arrets_raw$pays), collapse = ", "), "\n")
-cat("Arrêts sans coordonnées  :", sum(is.na(arrets_raw$coordonnees)), "\n")
 
-# 5.2 — Fréquentation journalière
-cat("\n--- Fréquentation journalière ---\n")
-freq_jour_def <- freq_jour_raw |> filter(donnees_definitives == TRUE)
-cat("Période couverte  :", format(min(freq_jour_def$date)),
-    "→", format(max(freq_jour_def$date)), "\n")
-cat("Nb jours couverts :", n_distinct(freq_jour_def$date), "\n")
-cat("Nb lignes actives :", n_distinct(freq_jour_def$ligne), "\n")
-cat("Nb arrêts couverts:", n_distinct(freq_jour_def$arret), "\n")
-cat("Montées — Min     :", round(min(freq_jour_def$nb_de_montees, na.rm = TRUE), 1), "\n")
-cat("Montées — Max     :", round(max(freq_jour_def$nb_de_montees, na.rm = TRUE), 1), "\n")
-cat("Montées — Moyenne :", round(mean(freq_jour_def$nb_de_montees, na.rm = TRUE), 1), "\n")
-cat("Montées — Médiane :", round(median(freq_jour_def$nb_de_montees, na.rm = TRUE), 1), "\n")
-cat("Données définitives :", sum(freq_jour_raw$donnees_definitives, na.rm = TRUE),
-    "/", nrow(freq_jour_raw),
-    paste0("(", round(mean(freq_jour_raw$donnees_definitives, na.rm = TRUE) * 100, 1), "%)"), "\n")
+# ══════════════════════════════════════════════════════════════
+# BLOC DÉCISION FINAL — SCRIPT 00
+# Ce qu'on a appris. Ce qu'on fait ensuite. Pourquoi.
+# ══════════════════════════════════════════════════════════════
 
-# 5.3 — Fréquentation mensuelle
-cat("\n--- Fréquentation mensuelle ---\n")
-freq_mois_def <- freq_mois_raw |> filter(donnees_definitives == TRUE)
-cat("Période couverte  :", min(freq_mois_def$annee), "→", max(freq_mois_def$annee), "\n")
-cat("Nb mois couverts  :", n_distinct(paste(freq_mois_def$annee,
-                                            freq_mois_def$indice_du_mois)), "\n")
-cat("Nb lignes actives :", n_distinct(freq_mois_def$ligne), "\n")
+# ── CE QU'ON A ÉTABLI ────────────────────────────────────────
 
-# 5.4 — Kilomètres produits
-cat("\n--- Kilomètres produits ---\n")
-cat("Colonnes disponibles :\n")
-print(colnames(km_raw))
-print(head(km_raw, 3))
+# PÉRIODES RÉELLES (vs documentation initiale)
+# journalier : avr 2023 → avr 2026  (3 ans)   ⚠ pas depuis fév 2023
+# mensuel    : jan 2016 → mar 2026  (10 ans)   ✅ référence historique
+# horaire    : jan 2019 → avr 2026  (7 ans)    ✅ couvre pré/post COVID
+# mn         : mar 2024 → avr 2026  (2 ans)    ⚠ CCG uniquement
+# km_prod    : jan 2016 → avr 2026  (10 ans)   ✅
+# collisions : jan 2015 → avr 2026  (11 ans)   ✅ le plus long
 
-# --- 6. Cohérence entre datasets -----------------------------
+# NA CONFIRMÉS SUR DONNÉES COMPLÈTES
+# arrets     / codedidoc   : 14.8% → critique Phase 4 (GTFS-RT)
+# arrets     / coordonnees :  3.2% → exclusion cartographie documentée
+# journalier / ligne       :  0.1% → exclure des analyses par ligne
+# mensuel    / ligne       :  1.1% → quantifier les montées perdues
+# km_prod    / ligne       :  0.3% → exclure des analyses par ligne
+# collisions / sens        :  9.8% → catégorie "Hors ligne" à créer
+# collisions / cat         :  0.0% → anecdotique, documenter
 
-cat(paste(rep("=", 60), collapse = ""), "\n")
-cat("COHÉRENCE ENTRE DATASETS\n")
-cat(paste(rep("=", 60), collapse = ""), "\n")
+# CONVENTIONS ADOPTÉES (valables pour tous les scripts suivants)
+# 1. ligne toujours converti en character avant jointure
+# 2. filtre donnees_definitives == TRUE systématique
+# 3. journalier = analyses détaillées récentes (3 ans)
+#    mensuel    = tendances historiques (10 ans)
+# 4. dataset mn : usage restreint — CCG, 2 ans seulement
 
-# 6.1 — Arrêts présents dans fréquentation mais pas dans arrets
-arrets_freq <- unique(freq_jour_raw$arret_code_long)
-arrets_ref   <- unique(arrets_raw$arretcodelong)
-arrets_orphelins <- setdiff(arrets_freq, arrets_ref)
+# ── CE QU'ON FAIT ENSUITE ────────────────────────────────────
 
-cat("\nArrêts dans fréquentation mais absents du référentiel :",
-    length(arrets_orphelins), "\n")
-if (length(arrets_orphelins) > 0 & length(arrets_orphelins) <= 20) {
-  cat("Codes concernés :", paste(arrets_orphelins, collapse = ", "), "\n")
-}
+# Script 01 — arrets
+#   → Séparer coordonnees en latitude / longitude (numeric)
+#   → Documenter les 148 arrêts sans coordonnées (actifs ou inactifs ?)
+#   → Inventorier les 688 arrêts sans codedidoc (actifs ou inactifs ?)
+#   → Carte Leaflet : arrêts actifs vs inactifs
 
-# 6.2 — Lignes communes entre datasets journalier et mensuel
-lignes_jour <- unique(freq_jour_raw$ligne)
-lignes_mois <- unique(freq_mois_raw$ligne)
-cat("\nLignes dans journalier :", length(lignes_jour), "\n")
-cat("Lignes dans mensuel    :", length(lignes_mois), "\n")
-cat("Lignes communes        :",
-    length(intersect(lignes_jour, lignes_mois)), "\n")
-cat("Lignes uniquement dans journalier :",
-    length(setdiff(lignes_jour, lignes_mois)), "\n")
-cat("Lignes uniquement dans mensuel    :",
-    length(setdiff(lignes_mois, lignes_jour)), "\n")
+# Script 02 — fréquentation journalière
+#   → Appliquer filtre donnees_definitives == TRUE
+#   → Convertir ligne en character
+#   → Top arrêts et top lignes sur données propres
+#   → Distribution des montées — courbe de Lorenz (concentration)
 
-# --- 7. Détection des outliers — fréquentation journalière ---
+# Script 03 — évolution temporelle
+#   → Utiliser le mensuel pour les tendances 2016-2026
+#   → Annoter : Léman Express (déc 2019), COVID (mar 2020), gratuité (jan 2025)
+#   → Quantifier les montées perdues avec les NA de ligne (mensuel)
 
-cat(paste(rep("=", 60), collapse = ""), "\n")
-cat("DÉTECTION DES OUTLIERS\n")
-cat(paste(rep("=", 60), collapse = ""), "\n")
+# Script 04 — heatmap horaire
+#   → Filtre !is.na(horaire_tranche_stop_theo)
+#   → Filtre horaire_type %in% c("NORMAL","SAMEDI","DIMANCHE")
+#   → Analyser séparément jours NORMAL vs VACANCES (T-002 à reproduire)
 
-# Méthode IQR — valeurs au-delà de Q1 - 1.5*IQR ou Q3 + 1.5*IQR
-freq_jour_def_agg <- freq_jour_def |>
-  group_by(date) |>
-  summarise(total_montees = sum(nb_de_montees, na.rm = TRUE),
-            .groups = "drop")
+# Script 05 — profil journalier
+#   → Médiane sur jours NORMAL — jamais la moyenne brute
+#   → Tests T-001, T-003, T-005, T-005b à intégrer au bon moment
 
-Q1  <- quantile(freq_jour_def_agg$total_montees, 0.25)
-Q3  <- quantile(freq_jour_def_agg$total_montees, 0.75)
-IQR <- Q3 - Q1
+# Script 06 — saisonnalité
+#   → Décomposition STL sur mensuel (2016-2026)
+#   → Annoter les ruptures connues
 
-outliers_bas  <- freq_jour_def_agg |>
-  filter(total_montees < Q1 - 1.5 * IQR) |>
-  arrange(total_montees)
+# Script 07 — impact COVID et ruptures
+#   → Tests T-002, T-004, T-004b, T-006 à reproduire avec rigueur narrative
+#   → Léman Express déc 2019 à tester (Chow)
+#   → Gratuité jan 2025 à tester (T-009) si données suffisantes
 
-outliers_haut <- freq_jour_def_agg |>
-  filter(total_montees > Q3 + 1.5 * IQR) |>
-  arrange(desc(total_montees))
+# Script 08 — collisions
+#   → Créer catégorie sens = "Hors ligne" pour les 978 NA
+#   → Explorer les 5 indicateurs de gravité
+#   → Cartographie directe (latitude/longitude déjà séparés)
 
-cat("\nSeuil outlier bas  :", round(Q1 - 1.5 * IQR), "montées/jour\n")
-cat("Seuil outlier haut :", round(Q3 + 1.5 * IQR), "montées/jour\n")
-cat("\nJours anormalement bas :", nrow(outliers_bas), "\n")
-if (nrow(outliers_bas) > 0) print(head(outliers_bas, 10))
-cat("\nJours anormalement élevés :", nrow(outliers_haut), "\n")
-if (nrow(outliers_haut) > 0) print(head(outliers_haut, 5))
-
-# --- 8. Visualisation — qualité des données ------------------
-
-# Graphique : taux de données définitives par mois
-taux_definitif <- freq_jour_raw |>
-  mutate(mois = floor_date(date, "month")) |>
-  group_by(mois) |>
-  summarise(
-    taux_def = mean(donnees_definitives, na.rm = TRUE) * 100,
-    .groups  = "drop"
-  )
-
-ggplot(taux_definitif, aes(x = mois, y = taux_def)) +
-  geom_line(color = "#E30613", linewidth = 0.8) +
-  geom_hline(yintercept = 95, color = "#4A6FA5",
-             linetype = "dashed", linewidth = 0.5) +
-  annotate("text", x = min(taux_definitif$mois),
-           y = 96, label = "Seuil 95%", color = "#4A6FA5",
-           size = 3, hjust = 0) +
-  scale_x_date(date_breaks = "6 months", date_labels = "%b %Y") +
-  scale_y_continuous(limits = c(0, 100),
-                     labels = function(x) paste0(x, "%")) +
-  labs(
-    title    = "Taux de données définitives par mois — fréquentation journalière",
-    subtitle = "Un taux < 95% indique des données encore provisoires",
-    x        = NULL,
-    y        = "% données définitives",
-    caption  = "Source : opendata.tpg.ch"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title       = element_text(face = "bold"),
-    plot.subtitle    = element_text(color = "grey50"),
-    axis.text.x      = element_text(angle = 45, hjust = 1),
-    panel.grid.minor = element_blank()
-  )
-
-ggsave("outputs/00_qualite_donnees_definitives.png",
-       width = 12, height = 5, dpi = 150)
-message("✓ Graphique qualité données sauvegardé")
-
-# --- 9. Résumé des décisions de nettoyage -------------------
-
-cat(paste(rep("=", 60), collapse = ""), "\n")
-cat("DÉCISIONS DE NETTOYAGE — RÉSUMÉ\n")
-cat(paste(rep("=", 60), collapse = ""), "\n\n")
-cat("1. FILTRAGE données définitives :\n")
-cat("   filter(donnees_definitives == TRUE)\n")
-cat("   Raison : les données provisoires sont sujettes à révision\n\n")
-cat("2. SÉPARATION coordonnées :\n")
-cat("   sub(',.*', '', coordonnees) → latitude\n")
-cat("   sub('.*, ', '', coordonnees) → longitude\n")
-cat("   Raison : colonne mixte dans le dataset arrêts\n\n")
-cat("3. FILTRAGE arrêts sans coordonnées :\n")
-cat("   filter(!is.na(latitude), !is.na(longitude))\n")
-cat("   Raison : arrêts non cartographiables\n\n")
-cat("4. SÉPARATION type de jour :\n")
-cat("   filter(horaire_type %in% c('NORMAL','SAMEDI','DIMANCHE'))\n")
-cat("   Raison : exclure jours VACANCES pour analyses par jour\n\n")
-cat("5. CONVERSION tranche horaire :\n")
-cat("   as.integer(horaire_tranche_stop_theo)\n")
-cat("   Raison : heure début de tranche en format numérique\n\n")
-cat("   NAs introduits pour valeurs non-numériques → exclus par filter(!is.na(heure))\n")
-
-message("\n✓ Exploration générale terminée — rapport complet affiché.")
+# Script 09 — récapitulatif tests statistiques
+#   → Dunn post-hoc (complément T-001)
+#   → T-007 Gini + bootstrap (concentration arrêts)
+#   → T-008 corrélation fréquentation × km produits
+#   → T-009 gratuité jeunes jan 2025
