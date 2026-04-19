@@ -338,3 +338,90 @@ ggsave("../outputs/05_profil_journalier.png",
        plot = p_profil, width = 14, height = 6, dpi = 150)
 
 message("Script 05 terminé.")
+
+
+# ── T-005b — MATRICE COMPLÈTE JOURS × HEURES ────────────────
+# Tous les jours vs toutes les heures — 5 × 19 = 95 tests
+# Chaque jour comparé aux 4 autres agrégés
+# Corrections : Bonferroni (ferme) + BH (exploratoire)
+
+ordre_jours <- c("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi")
+
+resultats_t005b <- data.frame()
+
+for (j in ordre_jours) {
+  for (h in 5:23) {
+    
+    sub <- normal %>%
+      filter(heure == h) %>%
+      mutate(est_jour = ifelse(jour == j, j, "Autres"))
+    
+    # Minimum 5 observations par groupe
+    if (sum(sub$est_jour == j) < 5 |
+        sum(sub$est_jour == "Autres") < 5) next
+    
+    kw <- kruskal.test(nb_de_montees ~ est_jour, data = sub)
+    
+    med_j      <- median(sub$nb_de_montees[sub$est_jour == j],
+                         na.rm = TRUE)
+    med_autres <- median(sub$nb_de_montees[sub$est_jour == "Autres"],
+                         na.rm = TRUE)
+    n_total    <- nrow(sub)
+    eta2_h     <- (kw$statistic - 1) / (n_total - 1)
+    
+    resultats_t005b <- rbind(resultats_t005b, data.frame(
+      jour      = j,
+      heure     = h,
+      p_value   = kw$p.value,
+      diff_pct  = round((med_j - med_autres) / med_autres * 100, 1),
+      eta2      = round(eta2_h, 3)
+    ))
+  }
+}
+
+# Corrections multiplicité — 95 tests
+resultats_t005b$p_bonf <- p.adjust(resultats_t005b$p_value,
+                                   method = "bonferroni")
+resultats_t005b$p_bh   <- p.adjust(resultats_t005b$p_value,
+                                   method = "BH")
+resultats_t005b$sig_bf <- resultats_t005b$p_bonf < 0.05
+resultats_t005b$sig_bh <- resultats_t005b$p_bh   < 0.05
+
+cat("=== T-005b — MATRICE COMPLÈTE JOURS × HEURES ===\n\n")
+cat("Tests totaux            :", nrow(resultats_t005b), "\n")
+cat("Sig. Bonferroni         :", sum(resultats_t005b$sig_bf),
+    "/", nrow(resultats_t005b),
+    "(", round(mean(resultats_t005b$sig_bf)*100,1), "%)\n")
+cat("Sig. BH                 :", sum(resultats_t005b$sig_bh),
+    "/", nrow(resultats_t005b),
+    "(", round(mean(resultats_t005b$sig_bh)*100,1), "%)\n\n")
+
+cat("Résumé par jour (heures sig. Bonferroni) :\n")
+resultats_t005b %>%
+  group_by(jour) %>%
+  summarise(
+    sig_bf    = sum(sig_bf),
+    eta2_max  = round(max(eta2), 3),
+    heure_max = heure[which.max(eta2)],
+    .groups   = "drop"
+  ) %>%
+  print()
+
+# ── BLOC DÉCISION T-005b ────────────────────────────────────
+# 52/95 sig. Bonferroni (54.7%) | 70/95 sig. BH (73.7%)
+# Chaque jour a une identité horaire statistiquement distincte
+#
+# EFFETS FORTS (η² > 0.10, hors artefacts nocturnes) :
+# Vendredi 23h : η²=0.292 — Noctambus vendredi (sous-réseau distinct)
+# Lundi    23h : η²=0.198 — creux soirée persistant
+# Mercredi 14h : η²=0.152 — bosse mi-journée confirmée
+#
+# NUANCE vs ancienne doc (75.7% sig. BH) :
+# On obtient 73.7% — légèrement inférieur car la matrice est
+# 5×19=95 tests ici vs 5×23=115 dans l'ancienne version
+# (on filtre heure >= 5 dans normal, pas les heures 0-4)
+# Résultat cohérent — différence méthodologique documentée
+
+ggsave("../outputs/05_profil_journalier.png",
+       plot = p_profil, width = 14, height = 6, dpi = 150)
+message("T-005b complété — AM-001 résolu.")
