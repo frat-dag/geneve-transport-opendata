@@ -81,7 +81,7 @@ Concrètement : **10% des arrêts (environ 100 sur 1 012) concentrent 74.2% de t
 
 Ce résultat a une implication opérationnelle directe : protéger et fiabiliser les 100 arrêts les plus chargés, c'est protéger les trois quarts du service public.
 
-![Courbe de Lorenz](outputs/09_lorenz_concentration.png)
+![Courbe de Lorenz](figures/09_lorenz_concentration.png)
 
 ### 2. Le COVID était un choc transitoire, pas un changement de régime
 
@@ -93,7 +93,7 @@ Ensuite, la série a été décomposée avec la méthode **STL**, qui sépare la
 
 Enfin, en comparant directement les distributions de fréquentation avant COVID (jan. 2016 – fév. 2020) et après (jan. 2022 – fév. 2026), on ne trouve aucune différence statistiquement significative (Mann-Whitney p=0.506). **Le réseau a retrouvé son niveau d'avant COVID.**
 
-![Décomposition STL](outputs/06_stl_decomposition.png)
+![Décomposition STL](figures/06_stl_decomposition.png)
 
 ### 3. Les lignes scolaires, elles, n'ont pas récupéré
 
@@ -127,7 +127,7 @@ La différence médiane est de 13 807 montées — soit l'équivalent de 23 bus 
 
 Le mercredi fait exception dans le détail : une bosse de fréquentation entre 11h et 15h (+17.8% à 14h comparé aux autres jours) combinée à un creux prononcé à 16h (-11.9%). C'est la signature de l'organisation scolaire genevoise — les enfants qui rentrent à midi déplacent la demande vers le milieu de journée.
 
-![Heatmap horaire](outputs/04_heatmap_horaire.png)
+![Heatmap horaire](figures/04_heatmap_horaire.png)
 
 ### 6. Les trams sont structurellement plus efficients que les bus
 
@@ -135,7 +135,7 @@ La corrélation entre km produits et montées par ligne est très forte (Spearma
 
 C'est la traduction statistique du **site propre intégral** des trams : une vitesse commerciale supérieure et une fréquence plus élevée à infrastructure égale. Chaque km de tram produit structurellement plus de service que chaque km de bus — un argument chiffré pour les décisions d'investissement dans l'extension du réseau ferré.
 
-![Corrélation km × montées](outputs/09_correlation_km_montees.png)
+![Corrélation km × montées](figures/09_correlation_km_montees.png)
 
 ### 7. 2025 n'est pas l'année la plus dangereuse — une fois normalisé
 
@@ -143,7 +143,7 @@ En nombre brut, 2025 est l'année record avec 1 024 collisions. Mais le réseau 
 
 Les années vraiment dangereuses étaient **2018 et 2019**, avec des taux de 37.2 et 37.6/Mkm. Depuis le COVID, le taux oscille entre 28 et 33 — en dessous des niveaux pré-COVID.
 
-![Taux de collision normalisé](outputs/09_taux_collision_normalise.png)
+![Taux de collision normalisé](figures/09_taux_collision_normalise.png)
 
 ---
 
@@ -169,7 +169,7 @@ tpg-opendata-analysis/
 │   ├── raw/                       ← Données brutes (.rds) — non versionnées
 │   └── processed/                 ← Données traitées — non versionnées
 │
-├── outputs/                       ← Graphiques et cartes — non versionnés
+├── figures/                       ← Graphiques et cartes — non versionnés
 └── README.md                      ← Ce fichier
 ```
 
