@@ -1,4 +1,5 @@
 # 🚌 TPG Open Data Analysis
+"travaux en cours — pipeline ETL complet, dashboards Power BI à venir
 
 **600 000 voyageurs par jour. 10 ans de données. Que nous disent vraiment les chiffres ?**
 
