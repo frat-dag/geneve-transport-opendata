@@ -20,7 +20,8 @@
 rm(list = ls())
 gc()
 
-setwd("D:/Frat/Documents/IA/Claude/Projet TPG/tpg-opendata-analysis/R")
+# Définir le répertoire de travail — adapter selon votre environnement
+# setwd("chemin/vers/tpg-opendata-analysis/R")
 
 library(dplyr)
 library(ggplot2)

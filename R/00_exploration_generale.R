@@ -1,9 +1,3 @@
-# Nettoyage de l'environnement
-#rm(list = ls())
-
-# Répertoire de travail
-#setwd("D:/Frat/Documents/IA/Claude/Projet TPG/tpg-opendata-analysis/R")
-
 # ============================================================
 # SCRIPT 00 — EXPLORATION GÉNÉRALE DES DONNÉES TPG
 # Projet : TPG Open Data Analysis
@@ -348,4 +342,22 @@ compter_na(collisions, "collisions")
 #   → Dunn post-hoc (complément T-001)
 #   → T-007 Gini + bootstrap (concentration arrêts)
 #   → T-008 corrélation fréquentation × km produits
-#   → T-009 gratuité jeunes jan 2025
+#   → T-009 gratuité jeunes jan 2025~
+
+
+# ── 12. SAUVEGARDE LOCALE DES DONNÉES BRUTES ────────────────
+# On sauvegarde en .rds — format natif R, plus rapide à relire
+# que le CSV et qui préserve les types (Date, logical, etc.)
+# Ces fichiers sont dans data/raw/ — exclus du repo (.gitignore)
+
+dir.create("../data/raw", recursive = TRUE, showWarnings = FALSE)
+
+saveRDS(arrets,     "../data/raw/arrets.rds")
+saveRDS(journalier, "../data/raw/journalier.rds")
+saveRDS(mensuel,    "../data/raw/mensuel.rds")
+saveRDS(horaire,    "../data/raw/horaire.rds")
+saveRDS(mn,         "../data/raw/mn.rds")
+saveRDS(km_prod,    "../data/raw/km_prod.rds")
+saveRDS(collisions, "../data/raw/collisions.rds")
+
+message("Données sauvegardées dans data/raw/")
