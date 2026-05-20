@@ -1,7 +1,5 @@
 # TPG Open Data Analysis
 
-"travaux en cours — pipeline ETL complet, dashboards Power BI à venir"
-
 **600 000 voyageurs par jour. 11 ans de données. Que nous disent vraiment les chiffres ?**
 
 À Genève, les Transports Publics Genevois (TPG) publient leurs données en open data. Ce projet les analyse rigoureusement, pas pour produire de jolis graphiques, mais pour répondre à des questions concrètes : le réseau a-t-il vraiment récupéré après le COVID ? La gratuité pour les jeunes a-t-elle changé quelque chose ? Quelles lignes sont efficientes, et lesquelles ne le sont pas ?
