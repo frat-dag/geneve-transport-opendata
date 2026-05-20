@@ -24,3 +24,7 @@ Thumbs.db
 
 # VS Code
 .vscode/
+
+# document analyse confidentielle
+outputs/TPG_confidentiel.md
+

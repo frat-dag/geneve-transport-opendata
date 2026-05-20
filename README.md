@@ -1,13 +1,11 @@
 # 🚌 TPG Open Data Analysis
 "travaux en cours — pipeline ETL complet, dashboards Power BI à venir
 
-**600 000 voyageurs par jour. 10 ans de données. Que nous disent vraiment les chiffres ?**
+**600 000 voyageurs par jour. 11 ans de données. Que nous disent vraiment les chiffres ?**
 
 À Genève, les Transports Publics Genevois (TPG) publient leurs données en open data. Ce projet les analyse rigoureusement — pas pour produire de jolis graphiques, mais pour répondre à des questions concrètes : le réseau a-t-il vraiment récupéré après le COVID ? La gratuité pour les jeunes a-t-elle changé quelque chose ? Quelles lignes sont efficientes, et lesquelles ne le sont pas ?
 
-L'analyse couvre 6 datasets, 11 tests statistiques formels, et jusqu'à 11 ans de données sur certains indicateurs. Elle est conçue pour être utile à trois types de lecteurs : les opérationnels TPG qui planifient l'offre, les élus qui votent les budgets, et les data analysts qui veulent comprendre la démarche.
-
-> ⚠️ **Version provisoire** — Les analyses de Phase 3 (efficience des lignes, croisements géographiques, clustering) et les visualisations Python/Power BI enrichiront ce README au fur et à mesure.
+L'analyse couvre 8 datasets (dont les couches géographiques SITG), 22 tests statistiques formels, 17 scripts, et jusqu'à 11 ans de données sur certains indicateurs. Elle est conçue pour être utile à trois types de lecteurs : les opérationnels TPG qui planifient l'offre, les élus qui votent les budgets, et les data analysts qui veulent comprendre la démarche.
 
 ---
 
@@ -90,7 +88,7 @@ Pour tester si le COVID a durablement modifié le niveau de fréquentation, troi
 
 Un **test de Chow** et des **tests CUSUM** sur la série brute ont confirmé l'existence de ruptures structurelles — trois précisément, en février 2020, août 2021 et février 2023.
 
-Ensuite, la série a été décomposée avec la méthode **STL**, qui sépare la fréquentation en trois composantes : tendance, saisonnalité, résidus. En relançant les mêmes tests sur les seuls résidus — c'est-à-dire sur ce qui reste après avoir retiré la tendance et la saisonnalité — les ruptures disparaissent (Chow p=0.164). Le COVID a été absorbé par la tendance, pas par le niveau résiduel.
+Ensuite, la série a été décomposée avec la méthode **STL**, qui sépare la fréquentation en trois composantes : tendance, saisonnalité, résidus. En relançant les mêmes tests sur les seuls résidus, le test de Chow ne détecte plus de rupture significative (p=0.164). Le Bai-Perron identifie encore deux points de changement dans les résidus, mais avec un différentiel BIC de seulement 15.3 points — insuffisant pour conclure à un changement de régime structurel. Le COVID a été absorbé par la tendance, pas par le niveau résiduel.
 
 Enfin, en comparant directement les distributions de fréquentation avant COVID (jan. 2016 – fév. 2020) et après (jan. 2022 – fév. 2026), on ne trouve aucune différence statistiquement significative (Mann-Whitney p=0.506). **Le réseau a retrouvé son niveau d'avant COVID.**
 
@@ -124,7 +122,7 @@ Les lignes PRINCIPAL ne montrent pas de hausse significative — non pas parce q
 
 Sur les jours de semaine normaux, la fréquentation à 17h est systématiquement supérieure à la fréquentation à 8h. Un test de Wilcoxon apparié sur 1 370 jours donne r=0.866 (très grand effet, p<10⁻²²⁵). **99.9% des jours respectent cette règle.**
 
-La différence médiane est de 13 807 montées — soit l'équivalent de 23 bus remplis de plus le soir que le matin, chaque jour.
+La différence médiane est de 13 807 montées — soit l'équivalent d'environ **138 à 170 bus remplis** de plus le soir que le matin, chaque jour.
 
 Le mercredi fait exception dans le détail : une bosse de fréquentation entre 11h et 15h (+17.8% à 14h comparé aux autres jours) combinée à un creux prononcé à 16h (-11.9%). C'est la signature de l'organisation scolaire genevoise — les enfants qui rentrent à midi déplacent la demande vers le milieu de journée.
 
@@ -164,13 +162,19 @@ tpg-opendata-analysis/
 │   ├── 06_saisonnalite.R          ← Décomposition STL
 │   ├── 07_impact_covid.R          ← T-002, T-004, T-004b, T-006
 │   ├── 08_collisions.R            ← Collisions, carte Leaflet, taux normalisé
-│   └── 09_tests_statistiques.R    ← T-007 Gini, T-008, T-009, AM-001 à AM-005
+│   ├── 09_tests_statistiques.R    ← T-007 Gini, T-008, T-009, AM-001 à AM-005
+│   ├── 10_efficience_lignes.R     ← T-010 : efficience PRINCIPAL vs SECONDAIRE (montées/km)
+│   ├── 11_collisions_spatial.R    ← Jointure spatiale collisions × arrêts, score composite
+│   ├── 12_sitg_equite_territoriale.R ← T-012 : densité population × fréquentation, SITG
+│   ├── 13_offre_demande.R         ← T-013a/b/c : rigidité offre, trams vs bus, tendance réseau
+│   ├── 14_noctambus_ligne10.R     ← T-014a–e : Noctambus 2016-2023, ligne 10 aéroport
+│   └── 15_sitg_scolaire_socioeco.R ← T-015a : desserte scolaire C1-C9, équité territoriale
 │
 ├── data/
 │   ├── raw/                       ← Données brutes (.rds) — non versionnées
 │   └── processed/                 ← Données traitées — non versionnées
 │
-├── figures/                       ← Graphiques et cartes — non versionnés
+├── figures/                       ← Graphiques et cartes — à versionner avant publication
 └── README.md                      ← Ce fichier
 ```
 
@@ -184,13 +188,26 @@ tpg-opendata-analysis/
 | T-002 | NORMAL vs VACANCES | Mann-Whitney unilatéral | 2 groupes indépendants, non normaux | -28.2%, r=0.549 (grand effet) |
 | T-003 | Le pic du soir (17h) dépasse-t-il le pic du matin (8h) ? | Wilcoxon apparié unilatéral | Mesures liées (même jour), direction fixée a priori | r=0.866, p<10⁻²²⁵ — très grand effet |
 | T-004 | COVID = rupture structurelle dans la série brute ? | Chow + CUSUM + Bai-Perron | Tests complémentaires (rupture connue, stabilité, détection auto) | 3 ruptures : fév. 2020, août 2021, fév. 2023 |
-| T-004b | La rupture persiste-t-elle dans les résidus STL ? | Chow + CUSUM sur résidus | Distinguer choc transitoire de changement de régime | Rupture absente → COVID = choc transitoire |
+| T-004b | La rupture persiste-t-elle dans les résidus STL ? | Chow + CUSUM + Bai-Perron sur résidus | Distinguer choc transitoire de changement de régime | Chow p=0.164 — rupture marginale dans les résidus (BIC Δ=15.3 pts) → COVID = choc transitoire |
 | T-005 | Le mercredi a-t-il un profil horaire distinct ? | KW par heure + Bonferroni + BH | Tests multiples (19 heures), deux niveaux de correction | 8/19 heures sig. Bonferroni — bosse 11h-15h |
 | T-005b | Matrice complète : chaque jour a-t-il une identité horaire ? | KW 5×19 + Bonferroni + BH | Exhaustivité — tester toutes les combinaisons | 52/95 sig. Bonferroni (54.7%) |
 | T-006 | La fréquentation pré et post-COVID est-elle identique ? | Mann-Whitney bilatéral | Pas de direction a priori, 2 périodes indépendantes | p=0.506, r=0.067 — récupération complète |
 | T-007 | Le trafic est-il très concentré sur quelques arrêts ? | Gini + bootstrap IC | Mesure de concentration standard, IC sans hypothèse de normalité | Gini=0.843, IC [0.811 ; 0.872] |
-| T-008 | Les km produits prédisent-ils les montées par ligne ? | Pearson + Spearman | Pearson (linéaire) + Spearman (monotone) pour comparaison | r=0.924 — trams = efficience structurelle |
+| T-008 | Les km produits prédisent-ils les montées par ligne ? | Pearson + Spearman | Pearson (linéaire) + Spearman (monotone) pour comparaison | Pearson r=0.867, Spearman r=0.924 — trams = efficience structurelle |
 | T-009 | La gratuité jeunes a-t-elle augmenté la fréquentation ? | Mann-Whitney par type de ligne | Segmentation nécessaire — effet dilué sur le réseau global | SECONDAIRE +13.1% p=0.004 ✅ |
+| T-010 | Les lignes PRINCIPAL sont-elles plus efficientes que SECONDAIRE (montées/km) ? | Mann-Whitney bilatéral | 2 groupes indépendants, non normaux, direction non fixée a priori | p=2.57×10⁻⁸, HL=+0.8 montées/km, r=0.702 (grand effet) |
+| T-011 | Le taux de blessés dans les collisions varie-t-il selon la saison ? | Chi² de Pearson | Variable binaire (blessé oui/non) × 4 saisons — hypothèse vélo | p=0.710, V Cramér=0.0038 — aucune différence saisonnière |
+| T-011b | La sévérité des collisions varie-t-elle selon la saison ? | Kruskal-Wallis | Distribution gravité × 4 saisons — non normal | p=0.701 — sévérité stable sur l'année |
+| T-012 | La densité de population est-elle corrélée à la fréquentation TPG par habitant ? | Spearman | Non normalité, outlier Genève-Ville → non paramétrique | rho=0.695, p=1.65×10⁻⁷ — corrélation forte, 4 anomalies identifiées |
+| T-013a | L'offre (km produits) baisse-t-elle autant que la demande en vacances ? | Mann-Whitney bilatéral | 2 groupes indépendants, non normaux — ratio montées/km NORMAL vs VACANCES | p=1.99×10⁻³⁷, HL=+1.149 montées/km, r=0.692 — offre structurellement rigide |
+| T-013b | Les trams ont-ils un ratio montées/km supérieur aux bus ? | Mann-Whitney bilatéral | Comparaison 2 modes, n_tram=5 — puissance limitée documentée | p=2.05×10⁻⁴, HL=+15.68, r=0.42 (moyen) — efficience tram confirmée |
+| T-013c | Le ratio montées/km réseau évolue-t-il sur 2016-2026 ? | LOESS descriptif (Spearman rétrogradé) | Ljung-Box (lag=12) confirme autocorrélation — Spearman invalide sur série mensuelle | rho=−0.726 (informatif, non conclusif) — tendance baissière à surveiller |
+| T-014a | La série Noctambus présente-t-elle des ruptures structurelles ? | Bai-Perron (détection) + Chow (confirmation) | Détection automatique sans a priori, puis confirmation aux dates identifiées | 3 ruptures : juin 2018, fév. 2020, mai 2022 — toutes confirmées Chow |
+| T-014b | La fréquentation nocturne du réseau a-t-elle évolué après l'absorption du Noctambus ? | Mann-Whitney bilatéral (0h-5h weekend) | Comparer avant/après déc. 2023 sur les heures nocturnes du réseau général | p=2.89×10⁻³, r=0.064 (marginal) — hausse détectable, non substantielle |
+| T-014c | Quelle est la position de la ligne 10 dans les lignes PRINCIPAL ? | Rang descriptif (n_L10=1) | n=1 dans un groupe → test formel non interprétable | rang 6/23 — constat de position, analyse descriptive |
+| T-014d | La ligne 10 résiste-t-elle mieux aux vacances que les autres PRINCIPAL ? | Rang descriptif (n_L10=1) | Même limite n=1 — signal qualitatif | ratio_vn L10=0.806 vs méd. PRINCIPAL=0.738 — signal usage employés |
+| T-014e | Le Noctambus déclinait-il avant la COVID ? | Mann-Whitney bilatéral | Comparer les deux périodes pré-COVID délimitées par la 1re rupture Bai-Perron | p=1.11×10⁻², HL=−853 montées, r=0.366 — déclin structurel confirmé (−10.6%) |
+| T-015a | Les communes plus peuplées ont-elles davantage d'arrêts scolaires C1-C9 ? | Spearman bilatéral (asymptotique) | Non normalité, 24 ex-aequo à 0 arrêt — p exacte non calculable | p=2.36×10⁻⁴ (n=45) — association positive significative |
 
 ---
 
@@ -202,10 +219,12 @@ Source : [opendata.tpg.ch](https://opendata.tpg.ch)
 |---------|---------|-------------|--------|
 | Arrêts du réseau | Historique | Par arrêt | 4 634 |
 | Fréquentation journalière | Avr. 2023 – Fév. 2026 | Jour × arrêt × ligne | 1 668 267 |
-| Fréquentation mensuelle | Jan. 2016 – Fév. 2026 | Mois × arrêt × ligne | 489 657 |
+| Fréquentation mensuelle | Jan. 2016 – Fév. 2026 | Mois × arrêt × ligne | 483 998 |
 | Fréquentation horaire | Jan. 2019 – Avr. 2026 | Heure × jour | 58 723 |
 | Kilomètres produits | Jan. 2016 – Avr. 2026 | Jour × ligne | 272 345 |
 | Collisions avec tiers | Jan. 2015 – Avr. 2026 | Par événement | 9 975 |
+| SITG Communes (géographie) | Déc. 2025 | Par commune | 45 polygones |
+| SITG Secteurs (géographie) | Déc. 2025 | Par secteur statistique | 16 polygones |
 
 ---
 
@@ -219,15 +238,15 @@ R 4.5+ et RStudio.
 install.packages(c("httr2", "dplyr", "ggplot2", "lubridate", "leaflet",
                    "htmlwidgets", "readr", "tidyr", "janitor", "viridis",
                    "scales", "strucchange", "zoo", "sandwich",
-                   "dunn.test", "here"))
+                   "dunn.test", "here", "sf", "forecast"))
 ```
 
 ### Exécution
 
 1. Cloner le repo
 2. Ouvrir le projet dans RStudio
-3. Définir le répertoire de travail vers `R/`
-4. Exécuter les scripts dans l'ordre — de `00_exploration_generale.R` à `09_tests_statistiques.R`
+3. Dans la console RStudio, exécuter `setwd("chemin/vers/tpg-opendata-analysis/R")` — ou ouvrir le fichier `.Rproj` à la racine du projet (le package `here` gère alors les chemins automatiquement)
+4. Exécuter les scripts dans l'ordre — de `00_exploration_generale.R` à `15_sitg_scolaire_socioeco.R`
 5. Le script `00` télécharge les données depuis l'API TPG et les sauvegarde en `.rds` — les sessions suivantes chargent depuis le disque en quelques secondes
 
 ---
@@ -244,6 +263,7 @@ install.packages(c("httr2", "dplyr", "ggplot2", "lubridate", "leaflet",
 | **Python 3.11** | Visualisations finales *(à venir)* |
 | **Power BI** | Dashboard interactif *(à venir)* |
 | **ML/clustering** | Typologies d'arrêts, prévision fréquentation *(à venir)* |
+| **sf** | Jointures spatiales, cartographie (SITG) |
 
 ---
 
@@ -270,4 +290,6 @@ install.packages(c("httr2", "dplyr", "ggplot2", "lubridate", "leaflet",
 
 ---
 
-*Projet en cours. Phase 3 (efficience des lignes, croisements géographiques SITG, clustering) et visualisations finales Python/Power BI à venir.*
+*Phase 3 complétée — efficience des lignes (scripts 10-11), croisements géographiques SITG (scripts 12, 15), offre vs demande (script 13), Noctambus et ligne 10 (script 14). 22 tests formels documentés. Visualisations finales Python/Power BI et dashboard interactif à venir.*
+
+*Source SITG : Système d'information du territoire à Genève (SITG) — licence Open Data SITG.*
