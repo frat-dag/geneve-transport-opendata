@@ -320,6 +320,7 @@ Cette note est destinée aux responsables TPG, aux élus en charge des transport
 ## Auteur
 
 **Frat DAG** — Statisticien et Data Analyst, Genève
+
 Email: fratdag@gmail.com  
 LinkedIn: https://www.linkedin.com/in/fratdag/
 
