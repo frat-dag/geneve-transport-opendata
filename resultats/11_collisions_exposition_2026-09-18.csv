@@ -1,0 +1,397 @@
+"arret_code","arret_nom","n_collisions","montees","collisions_par_Mmontees"
+"31DC00","31 Décembre",56,3691224.71,15.2
+"31DC01","31 Décembre",25,3816009.85,6.6
+"AAIN00","Avenue de l'Ain",6,2381973.49,2.5
+"AAIN01","Avenue de l'Ain",3,1323324.19,2.3
+"ACAC00","Acacias",14,2440074.7,5.7
+"ACAC01","Acacias",10,8252158.34,1.2
+"AERO00","Genève-Aéroport-Terminal",19,7071993.69,2.7
+"AERO01","Genève-Aéroport-Terminal",5,5006224.73,1
+"AERO02","Genève-Aéroport-Terminal",4,2655910.5,1.5
+"AERO05","Genève-Aéroport-Terminal",1,2295631.18,0.4
+"AERO06","Genève-Aéroport-Terminal",8,1039008.78,7.7
+"AGAZ00","Usine à Gaz",4,1561738.7,2.6
+"AGAZ01","Usine à Gaz",4,1059099.41,3.8
+"AJUR00","Ferney, centre",7,1272372.19,5.5
+"AJUR01","Ferney, centre",6,2793452.09,2.1
+"ALPE00","Alpes",27,1196634.51,22.6
+"AMDO00","Amandolier",10,2523634.84,4
+"AMDO01","Amandolier",15,4282317.87,3.5
+"AMDO03","Amandolier",10,2247567.47,4.4
+"ANCI00","Ancienne",19,3318379.75,5.7
+"ANCI01","Ancienne",36,1069460.47,33.7
+"APIA00","Appia",11,1658208.6,6.6
+"ARME00","Armes",19,9088586.03,2.1
+"ARME01","Armes",8,2419343.28,3.3
+"ARME02","Armes",25,2728561.28,9.2
+"ATHE01","Athénée",2,1373392.7,1.5
+"AUBI00","Merle-d'Aubigné",21,3580653.68,5.9
+"AUGS00","Augustins",19,13623308.23,1.4
+"AUGS01","Augustins",11,6679926.69,1.6
+"AVAN00","Vernier, Avanchets-Etang",3,2144033.62,1.4
+"AVIA01","Aviateurs",3,1471675.67,2
+"BAIR00","Bel-Air",38,23522870.23,1.6
+"BAIR01","Bel-Air",10,29057889.36,0.3
+"BAIR02","Bel-Air",28,17581536.45,1.6
+"BAIR04","Bel-Air",24,12298331.76,2
+"BAIR05","Bel-Air",15,34399159.65,0.4
+"BAIR06","Bel-Air",11,12197735.74,0.9
+"BAIR07","Bel-Air",16,2978776.3,5.4
+"BALX00","Balexert",2,7162595.99,0.3
+"BALX01","Balexert",4,15057976.57,0.3
+"BANS00","Bains",13,1611942.84,8.1
+"BARD00","Barde",6,1264158.09,4.7
+"BCRE01","Baulacre",3,1046205.81,2.9
+"BHET00","Lancy-Bachet-Gare",5,2615786.94,1.9
+"BHET01","Lancy-Bachet-Gare",1,1420514.73,0.7
+"BHET03","Lancy-Bachet-Gare",6,1538964.09,3.9
+"BHET04","Lancy-Bachet-Gare",15,2244526.11,6.7
+"BHET05","Lancy-Bachet-Gare",11,4556768.21,2.4
+"BHET08","Lancy-Bachet-Gare",2,4409995.4,0.5
+"BLAN00","Blanche",15,7119118.77,2.1
+"BLAN01","Blanche",13,2642782.51,4.9
+"BLDO00","Blandonnet",10,5180949.49,1.9
+"BLDO01","Blandonnet",9,4234916.73,2.1
+"BLDO02","Blandonnet",3,2541848.6,1.2
+"BLDO03","Blandonnet",2,9274249.51,0.2
+"BLDO04","Blandonnet",8,1478179.09,5.4
+"BMON01","Bout-du-Monde",8,1688008.14,4.7
+"BNDL00","Bandol",5,1632228.07,3.1
+"BNDL01","Bandol",8,5313143.41,1.5
+"BOHT00","Bouchet",11,3128513.01,3.5
+"BOHT01","Bouchet",2,6745560.44,0.3
+"BOHT02","Bouchet",14,8533372.38,1.6
+"BOHT03","Bouchet",3,1014785.93,3
+"BOHT04","Bouchet",16,2733389.9,5.9
+"BOLA01","Bois-du-Lan",4,3000233,1.3
+"BSSN00","Bossons",4,1169684.18,3.4
+"BTNI00","Butini",10,2756163.7,3.6
+"BTNI01","Butini",12,8709293.46,1.4
+"BTTT01","Belle-Terre-Traité-de-Turin",3,1054407.56,2.8
+"BVYL00","Bovy-Lysberg",9,1532012.07,5.9
+"CALA01","Calas",5,2038626.44,2.5
+"CAMA00","Carouge-Marché",25,7184392.36,3.5
+"CAMA01","Carouge-Marché",37,2161027.86,17.1
+"CAMA02","Carouge-Marché",36,1666233.86,21.6
+"CANO00","Canonnière",2,2731096.85,0.7
+"CBAC00","Chemin du Bac",5,1358554.42,3.7
+"CBAC01","Chemin du Bac",6,3127151.39,1.9
+"CBAC02","Chemin du Bac",4,1346875.5,3
+"CBAC03","Chemin du Bac",2,1568011.51,1.3
+"CBGO00","Chêne-Bourg-Gare-Place",5,1124510.18,4.4
+"CCHA00","Crêts-de-Champel",4,3936267.14,1
+"CCHA02","Crêts-de-Champel",6,1312331.77,4.6
+"CCLA01","Collège Claparède",7,1071441.48,6.5
+"CEPR00","Chêne-Bougeries, Rigaud",11,1792277.04,6.1
+"CERN00","CERN",4,2058540.94,1.9
+"CERN01","CERN",8,6363655.8,1.3
+"CHCL01","Vernier-Champ-Claude",18,3862679.05,4.7
+"CHLA00","Châtelaine",18,3992798.86,4.5
+"CHLA01","Châtelaine",18,8417251.7,2.1
+"CHRM00","Charmilles",24,3827868.9,6.3
+"CHRM01","Charmilles",11,5724918.82,1.9
+"CHRM02","Charmilles",9,3351867.98,2.7
+"CHRM03","Charmilles",11,2394317.49,4.6
+"CIRQ00","Cirque",7,2125598.89,3.3
+"CIRQ01","Cirque",8,8094057.12,1
+"CIRQ02","Cirque",11,4430411.92,2.5
+"CIRQ03","Cirque",7,3936557.6,1.8
+"CIRQ04","Cirque",21,3529184.78,6
+"CLAP00","Place Claparède",8,1085107.06,7.4
+"CLAP01","Place Claparède",16,1999945.45,8
+"CLAP02","Place Claparède",15,2863420.2,5.2
+"CLIG00","Lignon-Cité",7,1122644.62,6.2
+"CLIG01","Lignon-Cité",3,6370218.37,0.5
+"CMAR01","Camille-Martin",11,1714553.21,6.4
+"CMRE01","Communes-Réunies",5,1163157.59,4.3
+"CODN00","Colladon",13,2747401.02,4.7
+"CORD01","Concorde",4,2485977.78,1.6
+"COUT00","Coutance",20,10650642.09,1.9
+"COUT01","Coutance",31,11309605.91,2.7
+"COUT02","Coutance",12,10187812.42,1.2
+"COUT03","Coutance",4,9255231.61,0.4
+"CPLT00","Chantepoulet",67,11410917.72,5.9
+"CRCO01","Confignon-Croisée",2,3662734.9,0.5
+"CRCO05","Confignon-Croisée",8,1234842.53,6.5
+"CRGE00","Carouge-Rondeau",26,7199815.31,3.6
+"CRGE01","Carouge-Rondeau",14,2349122.52,6
+"CRGE02","Carouge-Rondeau",4,5599024.24,0.7
+"CRSY00","Cressy",10,1213866.52,8.2
+"CTMI00","Contamines",38,2737295.25,13.9
+"CTMI01","Contamines",8,1172167.43,6.8
+"CVIN01","Gare Cornavin",36,9322632,3.9
+"CVIN02","Gare Cornavin",15,6286776.27,2.4
+"CVIN03","Gare Cornavin",22,17689467.36,1.2
+"CVIN04","Gare Cornavin",11,36235118.54,0.3
+"CVIN05","Gare Cornavin",9,2209237.66,4.1
+"CVIN06","Gare Cornavin",13,5931758.15,2.2
+"CVIN09","Gare Cornavin",33,6017441.44,5.5
+"CVIN10","Gare Cornavin",6,28130782.03,0.2
+"CVIN14","Gare Cornavin",83,27603313.37,3
+"CVIN15","Gare Cornavin",19,35302667.83,0.5
+"CVIN18","Gare Cornavin",48,21199997.91,2.3
+"CVUE01","Claire-Vue",6,1621858.28,3.7
+"CXAB06","Croix d'Ambilly",10,1775742.62,5.6
+"CZDN00","Croix-de-Rozon-Douane",2,1398883.19,1.4
+"DELC00","Délices",10,2661823,3.8
+"DELC01","Délices",3,3590739.09,0.8
+"DELC02","Délices",15,1686001.18,8.9
+"DELC03","Délices",8,1131074.87,7.1
+"DOLE00","Dôle",19,2566415.23,7.4
+"DOLE01","Dôle",19,3183295.62,6
+"EMED00","Ecole-de-Médecine",5,1323009.64,3.8
+"EPIN02","Epinettes",9,1148977.1,7.8
+"EPIN03","Epinettes",18,1928561.83,9.3
+"ESRT00","Les Esserts",10,6391748.01,1.6
+"ESRT01","Les Esserts",7,10584752.93,0.7
+"ESRT03","Les Esserts",5,5699567.29,0.9
+"ESRT04","Les Esserts",14,3123231.39,4.5
+"ESRT05","Les Esserts",1,1230753.52,0.8
+"ETOI00","Lancy-Pont-Rouge-Gare/Etoile",37,4880091.1,7.6
+"ETOI01","Lancy-Pont-Rouge-Gare/Etoile",28,3808842.93,7.4
+"ETOI02","Lancy-Pont-Rouge-Gare/Etoile",6,2621601.23,2.3
+"ETOI03","Lancy-Pont-Rouge-Gare/Etoile",16,7878790.7,2
+"FAVR00","Place Favre",46,1890296.64,24.3
+"FAVR01","Place Favre",30,6330846.12,4.7
+"FAVR02","Place Favre",3,1355353.5,2.2
+"FEMA00","Ferney-Mairie",11,1999307.94,5.5
+"FLCE00","Florence",5,1891836.74,2.6
+"FONT00","Fontenette",8,1024408.79,7.8
+"FONT01","Fontenette",5,2173168.81,2.3
+"FORU00","Forumeyrin",2,2105202,1
+"FORU01","Forumeyrin",3,7770779.72,0.4
+"FRAN00","Franchises",4,2797584.67,1.4
+"FRAN01","Franchises",7,1653886.43,4.2
+"FRRE00","Bois-des-Frères",16,1040125.71,15.4
+"FRRE01","Bois-des-Frères",33,2581660.5,12.8
+"GAEV00","Genève-Eaux-Vives-Gare",22,1912742.03,11.5
+"GAEV03","Genève-Eaux-Vives-Gare",8,3170771.56,2.5
+"GAEV04","Genève-Eaux-Vives-Gare",20,5108279.74,3.9
+"GALI01","Gaillard-Libération",3,1041990.25,2.9
+"GAUT01","Gautier",11,4130205.35,2.7
+"GCAN00","Grange-Canal",30,2220491.21,13.5
+"GCAN01","Grange-Canal",9,6005063.16,1.5
+"GCHG01","Genève-Champel-Gare",6,2233190.11,2.7
+"GCHP01","Genève-Champel-Gare/Peschier",11,1116010.2,9.9
+"GCHP02","Genève-Champel-Gare/Peschier",19,1015359.44,18.7
+"GDLA00","Grand-Lancy-Place du 1er-Août",10,1934189.81,5.2
+"GDLA01","Grand-Lancy-Place du 1er-Août",7,6340642.11,1.1
+"GETE01","De-Ternier",7,4481586.69,1.6
+"GEVB00","Genève-Eaux-Vives-Gare/Bloch",11,1441151.21,7.6
+"GEVV01","Genève-Eaux-Vives-Gare/Vadier",1,1218412.7,0.8
+"GFAQ00","Grange-Falquet",49,1194878,41
+"GFAQ01","Grange-Falquet",30,3148831.51,9.5
+"GIAC00","Giacometti",11,1773374.34,6.2
+"GIOL00","Gardiol",17,3776099.36,4.5
+"GOS01","Gos",9,1452368.74,6.2
+"GOUL00","Goulart",40,4531805.5,8.8
+"GPRE00","Grand-Pré",25,2732241.26,9.1
+"GPRE01","Grand-Pré",4,1365507.96,2.9
+"GRAN01","Grangettes",26,1743265.35,14.9
+"GRVI01","Meyrin-Gravière",3,4200638.06,0.7
+"GRVI02","Meyrin-Gravière",2,3895067.59,0.5
+"GSON00","Graveson",9,3624111.72,2.5
+"GSON01","Graveson",32,10763736.95,3
+"GUYE00","Guye",19,7049213.7,2.7
+"GUYE01","Guye",14,8898560.56,1.6
+"HERM00","Hermance-Village",10,1588682.77,6.3
+"HOPI00","Hôpital",19,2750737.21,6.9
+"HOPI01","Hôpital",6,2952293.49,2
+"HOPI03","Hôpital",6,5010453.57,1.2
+"HTOU01","Hôpital de La Tour",1,4356080.33,0.2
+"INDT00","Industrielle",19,2346739.95,8.1
+"INDT01","Industrielle",8,6232937.26,1.3
+"INTR01","Intercontinental",14,1088767.98,12.9
+"ISAM00","Mercier",8,2012979.72,4
+"ISAM02","Mercier",12,6616931.11,1.8
+"JALP00","Jardin-Alpin-Vivarium",2,3987521.66,0.5
+"JALP01","Jardin-Alpin-Vivarium",4,4076554.19,1
+"JARB00","Jardin Botanique",11,1527920.46,7.2
+"JARB02","Jardin Botanique",14,2403064.01,5.8
+"JARB04","Jardin Botanique",19,1670439.04,11.4
+"JJAC01","Jean-Jacques",4,3301256.29,1.2
+"JOCT00","Jonction",8,14015304.72,0.6
+"JOCT01","Jonction",5,16853590.65,0.3
+"JOCT07","Jonction",13,3177198.22,4.1
+"JOCT08","Jonction",8,3734851.05,2.1
+"JPSA01","De-Sauvage",18,1314380.68,13.7
+"JVIL00","De-Joinville",12,3422666.58,3.5
+"KRIG01","Krieg",13,2672979.88,4.9
+"LAMA00","Lancy-Mairie",16,1129308.25,14.2
+"LAMA01","Lancy-Mairie",5,2474509.42,2
+"LAUB00","Aubert",10,1410820.7,7.1
+"LAUB01","Aubert",8,3726441.16,2.1
+"LAUB03","Aubert",7,1923831.28,3.6
+"LERO10","Le Rolliet",2,1329891.44,1.5
+"LYON00","Lyon",31,7046627.39,4.4
+"LYON01","Lyon",12,9105944.68,1.3
+"MAON00","Maison Onésienne",5,1028775.19,4.9
+"MAPA00","Maison de la Paix",10,1335529.15,7.5
+"MAPA01","Maison de la Paix",10,4716889.19,2.1
+"MARB01","Les Marbriers",2,1393250.21,1.4
+"MERV00","Mervelet",3,1170536.88,2.6
+"METR00","Métropole",73,13548841.77,5.4
+"METR01","Métropole",51,4308566.36,11.8
+"MGNE00","Montagne",12,2635726.44,4.6
+"MILE01","Miléant",13,3516986.71,3.7
+"MIRE01","Miremont",3,1281555.43,2.3
+"MLBA00","Moillebeau",6,3014904.11,2
+"MLBA01","Moillebeau",1,1095711.21,0.9
+"MLRD00","Molard",34,2821323.53,12.1
+"MLRD03","Molard",13,11078651.18,1.2
+"MLRD04","Molard",17,7502220.59,2.3
+"MOIL01","Moillesulaz",3,7345603.19,0.4
+"MOIL02","Moillesulaz",3,7085682.64,0.4
+"MOIL07","Moillesulaz",2,1667164.67,1.2
+"MOIL08","Moillesulaz",7,1406627.12,5
+"MOLE00","Môle",23,4056331.22,5.7
+"MOLE01","Môle",25,10222387.67,2.4
+"MONT02","Annemasse-Parc Montessuit",2,2018612.3,1
+"MOTU01","Monthoux",4,3065006.03,1.3
+"MPAR00","Maison des Parlements",13,2196352.59,5.9
+"MTBL00","Mont-Blanc",45,5980457.88,7.5
+"MTBL01","Mont-Blanc",87,3911106.36,22.2
+"MTTA00","Motta",17,3984100.55,4.3
+"MUET01","Musée d'ethnographie",3,2171074.16,1.4
+"MUET02","Musée d'ethnographie",5,2955078.17,1.7
+"MUSE00","Muséum",27,1715583.09,15.7
+"MUSE02","Muséum",11,1019751.93,10.8
+"MYRN01","Meyrin-Village",2,4136584.85,0.5
+"NATI10","Nations",28,4668435.76,6
+"NATI20","Nations",32,2767736.14,11.6
+"NAVI01","Navigation",9,5951475.07,1.5
+"ONCI00","Onex-Cité",15,1957806.96,7.7
+"ONEX00","Onex-Salle communale",10,2409984.27,4.1
+"ONEX01","Onex-Salle communale",9,7559766.97,1.2
+"ONMA00","Onex-Marché",10,1441166.82,6.9
+"ONMA01","Onex-Marché",4,5819636.72,0.7
+"OUCH00","Les Ouches",17,1543265.96,11
+"OUCH01","Les Ouches",14,2579298.43,5.4
+"PAIL00","Balexert-Pailly",2,3907017.27,0.5
+"PAIL01","Balexert-Pailly",1,2283901.91,0.4
+"PALE02","Palettes",1,4920958.32,0.2
+"PARC00","Parc et plage des Eaux-Vives",13,1011675.37,12.8
+"PBAL00","Petit-Bel-Air",11,2812590.41,3.9
+"PEIL00","Peillonnex",7,1722092.08,4.1
+"PEIL01","Peillonnex",16,4943024.99,3.2
+"PICY01","Lancy-Piscine",4,2502067.61,1.6
+"PITH00","Pictet-Thellusson",14,1460431.76,9.6
+"PITH01","Pictet-Thellusson",9,4829433.78,1.9
+"PLDI00","Palladium",9,3121694.48,2.9
+"PLDI01","Palladium",9,5075368.07,1.8
+"PLEV00","Place des Eaux-Vives",54,15056557.99,3.6
+"PLEV01","Place des Eaux-Vives",59,2861137.29,20.6
+"PLGE00","Genève-Plage",53,4933977.43,10.7
+"PLPA00","Plainpalais",24,13811426.72,1.7
+"PLPA02","Plainpalais",13,8516789.34,1.5
+"PLPA03","Plainpalais",9,10702218.99,0.8
+"PLPA04","Plainpalais",10,1032699.07,9.7
+"PLPA07","Plainpalais",7,7481219.95,0.9
+"PLPA08","Plainpalais",2,1375915.5,1.5
+"PNEV00","Place de Neuve",13,4213070.41,3.1
+"PNEV01","Place de Neuve",15,2816515.56,5.3
+"PNEV02","Place de Neuve",10,7219501.53,1.4
+"PNEV03","Place de Neuve",18,5831076.15,3.1
+"PONT01","Pontets",1,1916662.71,0.5
+"PONT02","Pontets",3,1802315.93,1.7
+"POTE00","Poterie",21,9454332.96,2.2
+"POTE01","Poterie",9,7066521.81,1.3
+"PRBE02","Bernex-P+R",1,2910052.79,0.3
+"PRBE03","Bernex-P+R",1,1038444.43,1
+"PRPI01","Pré-Picot",4,1434754.64,2.8
+"PRRI00","Prairie",33,5391272.42,6.1
+"PRRI01","Prairie",30,3946822.46,7.6
+"PRSM02","Sous-Moulin",9,4410097.07,2
+"PRVG01","Veigy-Douane",1,1162147.19,0.9
+"PSAC00","Petit-Saconnex",3,1722165.09,1.7
+"PTAR00","Pont-d'Arve",41,10913392.02,3.8
+"PTAR01","Pont-d'Arve",47,6082783.98,7.7
+"PTAR02","Pont-d'Arve",36,3016397.35,11.9
+"PTLA00","Petit-Lancy-Place",7,3713288.72,1.9
+"PTLA01","Petit-Lancy-Place",2,4765158.65,0.4
+"PTLA02","Petit-Lancy-Place",1,1534205.23,0.7
+"PXPO01","Palexpo",5,1475791.51,3.4
+"QARV01","Queue-d'Arve",1,1704728.9,0.6
+"QUID00","Quidort",1,1585631.65,0.6
+"QUID01","Quidort",2,2959182.07,0.7
+"RAVI01","Ravières",3,1048583.15,2.9
+"RIEU00","Rieu",13,2386724.2,5.4
+"RIEU01","Rieu",7,1006129.09,7
+"RIEU03","Rieu",6,1822454.72,3.3
+"RIGO00","Genève-Sécheron-Gare",10,1160140.3,8.6
+"RIVE00","Rive",38,13955544.69,2.7
+"RIVE01","Rive",46,1884578.1,24.4
+"RIVE02","Rive",10,2411225.37,4.1
+"RIVE03","Rive",37,12735517.75,2.9
+"RIVE04","Rive",11,5286741.63,2.1
+"RIVE06","Rive",20,8487449.53,2.4
+"RIVE08","Rive",33,14755086.39,2.2
+"RIVE09","Rive",23,7387581.68,3.1
+"RLAC00","Rue du Lac",36,5497606.01,6.5
+"RMOU01","Carouge, Mouettes",6,1263508.36,4.7
+"SCLO00","Sainte-Clotilde",27,1417507.03,19
+"SCLO01","Sainte-Clotilde",3,3000970.03,1
+"SECH00","Perle du Lac",5,2078791.84,2.4
+"SERV00","Servette",13,16755551.73,0.8
+"SERV01","Servette",15,14674649.24,1
+"SERV02","Servette",16,3576874.45,4.5
+"SERV03","Servette",8,2076339.65,3.9
+"SEYM00","Seymaz",15,1670359.48,9
+"SIGL00","SIG Lignon",1,1418519.64,0.7
+"SJCE01","Saint-Julien-Centre",1,2382200.56,0.4
+"SOCI00","Contrat-Social",18,1760678.44,10.2
+"SOCI01","Contrat-Social",7,2268952.29,3.1
+"STAL00","De-Staël",7,1841150.79,3.8
+"STAL01","De-Staël",14,1481388.92,9.5
+"STGE00","Grand-Lancy, Stade de Genève",15,3535081.93,4.2
+"STGE01","Grand-Lancy, Stade de Genève",13,2102814.41,6.2
+"STGE03","Grand-Lancy, Stade de Genève",17,4045008.82,4.2
+"STND00","Stand",21,5886072.61,3.6
+"STND01","Stand",27,3541526.75,7.6
+"STND02","Stand",14,5396985.25,2.6
+"STND03","Stand",4,8635816.58,0.5
+"TCAR00","Carouge-Tours",31,2448666.92,12.7
+"TCAR02","Carouge-Tours",29,2317759.22,12.5
+"TCAR03","Carouge-Tours",16,3788621.58,4.2
+"TCAR04","Carouge-Tours",6,4674597.42,1.3
+"TLIG00","Lignon-Tours",11,1203904.62,9.1
+"TLIG01","Lignon-Tours",1,1272849.2,0.8
+"TLIG02","Lignon-Tours",1,3101632.2,0.3
+"TOCO00","Tour-de-Contrôle",11,1386556.13,7.9
+"TOUR00","Tourelle",5,2498775.25,2
+"TRAN00","Tranchées",25,1130108.24,22.1
+"TRBL00","Trèfle-Blanc",2,1634846.3,1.2
+"TRLL01","La Traille",3,1071681.66,2.8
+"TRMB00","Trembley",6,1485900.5,4
+"TRSI00","Terrassière",13,5838912.87,2.2
+"TRSI01","Terrassière",30,7226528.37,4.2
+"TRSI02","Terrassière",31,4264842.45,7.3
+"TRSI03","Terrassière",35,3730153.15,9.4
+"TVDO00","Thônex-Vallard",25,3512861.44,7.1
+"UNIM01","Uni-Mail",6,6398269.66,0.9
+"UNIM02","Uni-Mail",13,10158386.18,1.3
+"VARV01","Val-d'Arve",4,2159912.68,1.9
+"VAUD01","Vaudagne",2,5499416.69,0.4
+"VECR01","Vernier-Gare/Croisette",26,2125999.75,12.2
+"VEEC01","Vernier-Ecole",14,2893370.83,4.8
+"VELO01","Vélodrome",4,1645336.56,2.4
+"VEMA01","Vernier-Marché",15,2142296.39,7
+"VEVI00","Vernier-Village",7,3822127.96,1.8
+"VIDO01","Vidollet",3,1148656.06,2.6
+"VIDO02","Vidollet",6,1193345.94,5
+"VILL00","Villereuse",31,5184998.75,6
+"VILL01","Villereuse",15,7305663.44,2.1
+"VIUS00","Vieusseux",5,7083092.9,0.7
+"VIUS01","Vieusseux",7,3781940.71,1.9
+"VLRS01","Velours",9,1249558.07,7.2
+"VOLL00","Vollandes",30,4579106.51,6.6
+"VRDO00","Veyrier-Douane",4,3577980.32,1.1
+"VRNT01","Vernets",3,1136276.12,2.6
+"VSNA00","Vésenaz-Village",12,1751727.98,6.9
+"VSNA01","Vésenaz-Village",15,3302379.99,4.5
+"VTRN02","Veyrier-Tournettes",3,1323171.78,2.3
+"VXGA01","Versoix-Gare",1,1214267.37,0.8
+"WEBR00","Weber",5,2359656.53,2.1
+"WEND00","Wendt",14,1750493.62,8
+"WTC00","WTC",11,2662316.91,4.1
+"ZIPL10","ZIPLO",1,1349135.35,0.7

@@ -1,0 +1,1329 @@
+"arret_code","arret_nom","n_collisions"
+"MTBL01","Mont-Blanc",92
+"CVIN14","Gare Cornavin",89
+"METR00","Métropole",79
+"CPLT00","Chantepoulet",76
+"PLEV01","Place des Eaux-Vives",61
+"GFAQ00","Grange-Falquet",60
+"31DC00","31 Décembre",59
+"PLEV00","Place des Eaux-Vives",59
+"PLGE00","Genève-Plage",59
+"METR01","Métropole",55
+"CVIN18","Gare Cornavin",53
+"PLEV04","Place des Eaux-Vives",51
+"FAVR00","Place Favre",50
+"PTAR01","Pont-d'Arve",49
+"RIVE01","Rive",48
+"JPSA00","De-Sauvage",47
+"MTBL00","Mont-Blanc",47
+"PTAR00","Pont-d'Arve",44
+"GOUL00","Goulart",43
+"CVIN01","Gare Cornavin",42
+"DJ00","Dépôt Jonction",41
+"RIVE00","Rive",41
+"RLAC01","Rue du Lac",41
+"BAIR00","Bel-Air",40
+"CTMI00","Contamines",40
+"ETOI00","Lancy-Pont-Rouge-Gare/Etoile",40
+"PTAR02","Pont-d'Arve",40
+"RIVE08","Rive",40
+"RLAC00","Rue du Lac",40
+"CBRI00","De-Chateaubriand",39
+"AERO09","Genève-Aéroport-Terminal",38
+"CAMA01","Carouge-Marché",38
+"MLRD00","Molard",38
+"RIVE03","Rive",38
+"TRSI03","Terrassière",38
+"ANCI01","Ancienne",37
+"CAMA02","Carouge-Marché",37
+"PRRI00","Prairie",37
+"FRRE01","Bois-des-Frères",36
+"GFAQ01","Grange-Falquet",36
+"MOTU00","Monthoux",36
+"NATI20","Nations",36
+"CVIN09","Gare Cornavin",35
+"GSON01","Graveson",35
+"LYON00","Lyon",35
+"TCAR00","Carouge-Tours",35
+"CMRE00","Communes-Réunies",34
+"COUT01","Coutance",34
+"GCAN00","Grange-Canal",34
+"TRSI02","Terrassière",33
+"FAVR01","Place Favre",32
+"NATI10","Nations",32
+"PRRI01","Prairie",32
+"RIVE96","Rive",32
+"SCLO00","Sainte-Clotilde",32
+"TCAR02","Carouge-Tours",32
+"TRSI01","Terrassière",32
+"VILL00","Villereuse",32
+"GPRE00","Grand-Pré",31
+"VOLL00","Vollandes",31
+"BAIR02","Bel-Air",30
+"STND01","Stand",30
+"BAIR04","Bel-Air",29
+"ETOI01","Lancy-Pont-Rouge-Gare/Etoile",29
+"GRAN00","Grangettes",29
+"GSAC06","Grand-Saconnex-Place",29
+"MOLE01","Môle",29
+"ALPE00","Alpes",28
+"ARME02","Armes",28
+"CHNE03","Chêne-Bougeries, Village",28
+"ISAM01","Mercier",28
+"MUSE00","Muséum",28
+"CRGE00","Carouge-Rondeau",27
+"GRAN01","Grangettes",27
+"MOLE00","Môle",27
+"ONEX02","Onex-Salle communale",27
+"PARC01","Parc et plage des Eaux-Vives",27
+"PLPA00","Plainpalais",27
+"AERO00","Genève-Aéroport-Terminal",26
+"VECR01","Vernier-Gare/Croisette",26
+"VEMA00","Vernier-Marché",26
+"31DC01","31 Décembre",25
+"ATHE00","Athénée",25
+"CAMA00","Carouge-Marché",25
+"GRAN02","Grangettes",25
+"MUVO01","Musée Voltaire",25
+"PNEV05","Place de Neuve",25
+"RIVE06","Rive",25
+"RIVE09","Rive",25
+"TRAN00","Tranchées",25
+"TVDO00","Thônex-Vallard",25
+"VOLL01","Vollandes",25
+"CHRM00","Charmilles",24
+"CIRQ04","Cirque",24
+"GAEV00","Genève-Eaux-Vives-Gare",24
+"MLRD01","Molard",24
+"GAEV04","Genève-Eaux-Vives-Gare",23
+"JARB04","Jardin Botanique",23
+"STND00","Stand",23
+"VEEC00","Vernier-Ecole",23
+"WTC01","WTC",23
+"AUGS00","Augustins",22
+"CVIN03","Gare Cornavin",22
+"DOLE01","Dôle",22
+"GIOL00","Gardiol",22
+"POTE00","Poterie",22
+"VEGR00","Vernier-Gare/Renfile",22
+"VXCS00","Versoix-Centre sportif",22
+"ARME00","Armes",21
+"AUBI00","Merle-d'Aubigné",21
+"BRDX00","Bardonnex, village",21
+"CHCL01","Vernier-Champ-Claude",21
+"CHLA01","Châtelaine",21
+"CVIN15","Gare Cornavin",21
+"DOLE00","Dôle",21
+"EPIN03","Epinettes",21
+"GCHP02","Genève-Champel-Gare/Peschier",21
+"INDT00","Industrielle",21
+"MLRD04","Molard",21
+"MTTA00","Motta",21
+"PARC00","Parc et plage des Eaux-Vives",21
+"PNEV03","Place de Neuve",21
+"SECH01","Perle du Lac",21
+"ANCI00","Ancienne",20
+"CHLA00","Châtelaine",20
+"CORD00","Concorde",20
+"COUT00","Coutance",20
+"HOPI00","Hôpital",20
+"JARB05","Jardin Botanique",20
+"JPSA01","De-Sauvage",20
+"STGE03","Grand-Lancy, Stade de Genève",20
+"VEEC01","Vernier-Ecole",20
+"GUYE00","Guye",19
+"PNEV01","Place de Neuve",19
+"SOCI00","Contrat-Social",19
+"AUBI01","Merle-d'Aubigné",18
+"BAIR07","Bel-Air",18
+"BHET04","Lancy-Bachet-Gare",18
+"BLAN00","Blanche",18
+"BOHT04","Bouchet",18
+"JOCT02","Jonction",18
+"LAMA00","Lancy-Mairie",18
+"PEIL01","Peillonnex",18
+"PRMO00","Pré-Monnard",18
+"SERV01","Servette",18
+"BAIR05","Bel-Air",17
+"CVIN06","Gare Cornavin",17
+"GAUT00","Gautier",17
+"GRDL07","Chêne-Bougeries, Gradelle",17
+"GSON02","Graveson",17
+"JADA00","Musée d'art et d'histoire",17
+"JARB02","Jardin Botanique",17
+"OUCH00","Les Ouches",17
+"OUCH01","Les Ouches",17
+"PITH00","Pictet-Thellusson",17
+"SERV02","Servette",17
+"STGE00","Grand-Lancy, Stade de Genève",17
+"VEMA01","Vernier-Marché",17
+"AMDO01","Amandolier",16
+"CHCL00","Vernier-Champ-Claude",16
+"CLAP01","Place Claparède",16
+"CVIN02","Gare Cornavin",16
+"ETOI03","Lancy-Pont-Rouge-Gare/Etoile",16
+"FRRE00","Bois-des-Frères",16
+"GCHN03","Gros-Chêne",16
+"MUVO00","Musée Voltaire",16
+"PHIL00","Philosophes",16
+"TCAR03","Carouge-Tours",16
+"UBER00","Petit-Lancy, Morgines",16
+"ACAC00","Acacias",15
+"BLAN98","Blanche",15
+"CLAP02","Place Claparède",15
+"CRGE01","Carouge-Rondeau",15
+"CXAB07","Croix d'Ambilly",15
+"DELC02","Délices",15
+"FRRE02","Bois-des-Frères",15
+"GCHP01","Genève-Champel-Gare/Peschier",15
+"GXPO01","Gex-Centre",15
+"KRIG01","Krieg",15
+"ONCI00","Onex-Cité",15
+"PEIL02","Peillonnex",15
+"PRBE04","Bernex-P+R",15
+"SERV00","Servette",15
+"SEYM00","Seymaz",15
+"STAL01","De-Staël",15
+"STGE01","Grand-Lancy, Stade de Genève",15
+"STND02","Stand",15
+"THRE01","Théâtre",15
+"VILL01","Villereuse",15
+"VSNA01","Vésenaz-Village",15
+"WEND00","Wendt",15
+"APIA00","Appia",14
+"BANS00","Bains",14
+"BMON00","Bout-du-Monde",14
+"BOHT02","Bouchet",14
+"COUT02","Coutance",14
+"ESRT04","Les Esserts",14
+"GEVB00","Genève-Eaux-Vives-Gare/Bloch",14
+"GRDL06","Chêne-Bougeries, Gradelle",14
+"GUYE01","Guye",14
+"INTR01","Intercontinental",14
+"MILE00","Miléant",14
+"MLRD03","Molard",14
+"PBAL00","Petit-Bel-Air",14
+"PLPA04","Plainpalais",14
+"PXPH00","Palexpo-Halle 7",14
+"RIEU00","Rieu",14
+"RIGO01","Genève-Sécheron-Gare",14
+"RIVE04","Rive",14
+"SJSN04","Saint Julien, gare",14
+"STGE06","Grand-Lancy, Stade de Genève",14
+"TOCO00","Tour-de-Contrôle",14
+"TRSI00","Terrassière",14
+"WTC00","WTC",14
+"BLAN01","Blanche",13
+"BTNI00","Butini",13
+"BTNI01","Butini",13
+"CIMT00","Cimetière Saint-Georges",13
+"CODN00","Colladon",13
+"CVIN04","Gare Cornavin",13
+"CVIN05","Gare Cornavin",13
+"GIAC00","Giacometti",13
+"HERM00","Hermance-Village",13
+"ISAM02","Mercier",13
+"JOCT07","Jonction",13
+"JVIL00","De-Joinville",13
+"LYON01","Lyon",13
+"MGNE00","Montagne",13
+"MILE01","Miléant",13
+"MPAR00","Maison des Parlements",13
+"MUSE02","Muséum",13
+"NAVI00","Navigation",13
+"PLEV03","Place des Eaux-Vives",13
+"PLGE03","Genève-Plage",13
+"PLPA02","Plainpalais",13
+"PNEV00","Place de Neuve",13
+"PXPH01","Palexpo-Halle 7",13
+"THRE00","Théâtre",13
+"UNIM02","Uni-Mail",13
+"AUGS01","Augustins",12
+"BAIR06","Bel-Air",12
+"CAPI00","Capite",12
+"CEPR00","Chêne-Bougeries, Rigaud",12
+"CHRM03","Charmilles",12
+"CIRQ02","Cirque",12
+"CMAR01","Camille-Martin",12
+"FAVR03","Place Favre",12
+"FEMA00","Ferney-Mairie",12
+"HTOU00","Hôpital de La Tour",12
+"JARB00","Jardin Botanique",12
+"MAPA01","Maison de la Paix",12
+"PR4700","Grand-Saconnex, P+R",12
+"STGE07","Grand-Lancy, Stade de Genève",12
+"VECR00","Vernier-Gare/Croisette",12
+"VSNA00","Vésenaz-Village",12
+"AMDO00","Amandolier",11
+"AMDO02","Amandolier",11
+"AMDO03","Amandolier",11
+"BHET05","Lancy-Bachet-Gare",11
+"BLDO00","Blandonnet",11
+"BOHT00","Bouchet",11
+"CHRM01","Charmilles",11
+"CIRQ01","Cirque",11
+"CRSY00","Cressy",11
+"ESRT00","Les Esserts",11
+"ESRT01","Les Esserts",11
+"GAUT01","Gautier",11
+"GDLA03","Grand-Lancy-Place du 1er-Août",11
+"GEVB01","Genève-Eaux-Vives-Gare/Bloch",11
+"KRIG00","Krieg",11
+"LAUB00","Aubert",11
+"LOMB00","Lombard",11
+"MUSE01","Muséum",11
+"NAVI01","Navigation",11
+"PALE10","Palettes",11
+"PLGE01","Genève-Plage",11
+"STGE04","Grand-Lancy, Stade de Genève",11
+"TLIG00","Lignon-Tours",11
+"VEGR02","Vernier-Gare/Renfile",11
+"VLON00","Vallon",11
+"ACAC01","Acacias",10
+"BAIR01","Bel-Air",10
+"BNDL01","Bandol",10
+"BVYL00","Bovy-Lysberg",10
+"CHRM02","Charmilles",10
+"CHVO04","Ferney-Château",10
+"CRGE96","Carouge-Rondeau",10
+"CTGY01","Cartigny-Village",10
+"CXAB06","Croix d'Ambilly",10
+"DE00","Dépôt En-Chardon",10
+"DELC00","Délices",10
+"ESRT98","Les Esserts",10
+"ETCB00","Etang-Casa Bamba",10
+"GCAN01","Grange-Canal",10
+"GDLA00","Grand-Lancy-Place du 1er-Août",10
+"GOS01","Gos",10
+"JJAC00","Jean-Jacques",10
+"MAPA00","Maison de la Paix",10
+"ONEX00","Onex-Salle communale",10
+"ONMA00","Onex-Marché",10
+"PARC02","Parc et plage des Eaux-Vives",10
+"PLDI00","Palladium",10
+"PLDI01","Palladium",10
+"PLPA03","Plainpalais",10
+"PNEV02","Place de Neuve",10
+"POMI02","Le Pommier",10
+"POTE01","Poterie",10
+"PRSM00","Sous-Moulin",10
+"PRSM02","Sous-Moulin",10
+"RIGO00","Genève-Sécheron-Gare",10
+"RIVE02","Rive",10
+"RIVE05","Rive",10
+"SERV03","Servette",10
+"SYGA00","Satigny-Gare",10
+"AIRE01","Aïre",9
+"AREN01","Genève-Aéroport, gare-Arena",9
+"BLDO01","Blandonnet",9
+"BMON01","Bout-du-Monde",9
+"BNDL98","Bandol",9
+"BSOL01","Genève, Clinique Générale",9
+"CANO01","Canonnière",9
+"CBRI01","De-Chateaubriand",9
+"CIRQ00","Cirque",9
+"CLDR01","Calandrini",9
+"CLIG00","Lignon-Cité",9
+"CRCO05","Confignon-Croisée",9
+"CRIG00","Cologny, Righi",9
+"DELC03","Délices",9
+"DODE01","La Dode",9
+"EPIN02","Epinettes",9
+"GCHG00","Genève-Champel-Gare",9
+"GETE01","De-Ternier",9
+"GLAI00","Galaise",9
+"GROT00","Grottes",9
+"GSON00","Graveson",9
+"INDT01","Industrielle",9
+"JOCT00","Jonction",9
+"JOCT08","Jonction",9
+"MAIX01","Maisonnex",9
+"ONEX01","Onex-Salle communale",9
+"PEIL00","Peillonnex",9
+"PITH01","Pictet-Thellusson",9
+"PLOU00","Plan-les-Ouates-Mairie",9
+"PRGM07","Meyrin-Gare",9
+"PTLA00","Petit-Lancy-Place",9
+"PTLA99","Petit-Lancy-Place",9
+"SIGN00","Signal",9
+"TOUR01","Tourelle",9
+"VARV00","Val-d'Arve",9
+"VAUD00","Vaudagne",9
+"VIUS01","Vieusseux",9
+"VLRS01","Velours",9
+"VXBO01","Versoix-Bourg",9
+"AERO01","Genève-Aéroport-Terminal",8
+"AERO06","Genève-Aéroport-Terminal",8
+"ARME01","Armes",8
+"BELL01","Bellerive",8
+"BHET00","Lancy-Bachet-Gare",8
+"BLDO04","Blandonnet",8
+"BOCA01","Bois-Caran",8
+"CAMA96","Carouge-Marché",8
+"CERN01","CERN",8
+"CIVI00","Corsier-Village",8
+"CLAP00","Place Claparède",8
+"CRGE04","Carouge-Rondeau",8
+"CTMI01","Contamines",8
+"CTMI03","Contamines",8
+"DB00","Dépôt Bachet",8
+"FLRI00","Florissant",8
+"FONT00","Fontenette",8
+"GAEV03","Genève-Eaux-Vives-Gare",8
+"GCHN02","Gros-Chêne",8
+"GEVV02","Genève-Eaux-Vives-Gare/Vadier",8
+"HOPI01","Hôpital",8
+"HTOU02","Hôpital de La Tour",8
+"ISAM00","Mercier",8
+"LAUB01","Aubert",8
+"MGRE00","Montalègre",8
+"MOIL08","Moillesulaz",8
+"PALE09","Palettes",8
+"PLPA07","Plainpalais",8
+"QARV00","Queue-d'Arve",8
+"RIEU03","Rieu",8
+"SJHU00","Saint-Julien-Hutins",8
+"STAL00","De-Staël",8
+"TRTI07","Tunnel Routier",8
+"VEGR03","Vernier-Gare/Renfile",8
+"VRBE00","Varembé",8
+"WEND01","Wendt",8
+"AIVT00","Aire-la-Ville-Treulaz",7
+"AJUR00","Ferney, centre",7
+"ATHE04","Athénée",7
+"CABO00","Bains de Cressy",7
+"CAMA95","Carouge-Marché",7
+"CAPI01","Capite",7
+"CCHA02","Crêts-de-Champel",7
+"CCLA01","Collège Claparède",7
+"CHAR00","Charrot",7
+"CIRQ03","Cirque",7
+"CMAR00","Camille-Martin",7
+"CRCO00","Confignon-Croisée",7
+"CVIN10","Gare Cornavin",7
+"CVIN78","Gare Cornavin",7
+"CVUE01","Claire-Vue",7
+"FRAN01","Franchises",7
+"GALI00","Gaillard-Libération",7
+"GAVA01","Gavard",7
+"GDLA01","Grand-Lancy-Place du 1er-Août",7
+"GPRE02","Grand-Pré",7
+"GSMA01","Grand-Saconnex-Mairie",7
+"JVIL01","De-Joinville",7
+"LAUB03","Aubert",7
+"MRNE00","Moraines",7
+"MTOU00","Meinier-Tour",7
+"MUET02","Musée d'ethnographie",7
+"OMSB01","Genève, OMS-BIT",7
+"PINC01","Pinchat-la-Tour",7
+"PLEY00","Palais Eynard",7
+"PLOU01","Plan-les-Ouates-Mairie",7
+"POST00","Poste",7
+"PSIE01","Pont de Sierne",7
+"QUID98","Quidort",7
+"RIEU01","Rieu",7
+"SOCI01","Contrat-Social",7
+"TCRE00","Tour-Carrée",7
+"TCRE01","Tour-Carrée",7
+"TRBL01","Trèfle-Blanc",7
+"TRMB00","Trembley",7
+"VACA01","Vernier, Avanchets-Casaï",7
+"VDUR01","Duret",7
+"VEVI00","Vernier-Village",7
+"VLAI00","Valais",7
+"VLRS00","Velours",7
+"VSEG00","Vésenaz-Eglise",7
+"WEBR01","Weber",7
+"AAIN00","Avenue de l'Ain",6
+"AJUR01","Ferney, centre",6
+"ATEC02","Athenaz-Ecole",6
+"AUGS96","Augustins",6
+"BAIR18","Bel-Air",6
+"BARD00","Barde",6
+"BHET03","Lancy-Bachet-Gare",6
+"BSOL00","Genève, Clinique Générale",6
+"BUTN01","Pont-Butin",6
+"CALA01","Calas",6
+"CBAC00","Chemin du Bac",6
+"CBAC01","Chemin du Bac",6
+"CCLA00","Collège Claparède",6
+"CEPR01","Chêne-Bougeries, Rigaud",6
+"CHNE02","Chêne-Bougeries, Village",6
+"CLGE00","Collonge",6
+"CMRE01","Communes-Réunies",6
+"CORD01","Concorde",6
+"CRGE98","Carouge-Rondeau",6
+"CRIG01","Cologny, Righi",6
+"CRTE03","Crête",6
+"CVUE00","Claire-Vue",6
+"CZPL00","Croix-de-Rozon-Place",6
+"DANC01","Dancet",6
+"ETOI02","Lancy-Pont-Rouge-Gare/Etoile",6
+"ETOI05","Lancy-Pont-Rouge-Gare/Etoile",6
+"FEPO01","Ferney, Poterie",6
+"FLCE00","Florence",6
+"FLCE01","Florence",6
+"FONT01","Fontenette",6
+"GCHG01","Genève-Champel-Gare",6
+"GETE00","De-Ternier",6
+"HOPI03","Hôpital",6
+"JALP01","Jardin-Alpin-Vivarium",6
+"JOCT01","Jonction",6
+"JOPO00","Genève, Pointe de la Jonction",6
+"LAUB02","Aubert",6
+"MALA02","Malagnou",6
+"MAON00","Maison Onésienne",6
+"MLBA00","Moillebeau",6
+"MLVT00","Saint-Genis-Porte de France",6
+"MPAR01","Maison des Parlements",6
+"MTOU01","Meinier-Tour",6
+"MUSE03","Muséum",6
+"PINC00","Pinchat-la-Tour",6
+"POGA00","Pougny-Gare",6
+"PRSM05","Sous-Moulin",6
+"PXPO01","Palexpo",6
+"QARV02","Queue-d'Arve",6
+"RMOU00","Carouge, Mouettes",6
+"RMOU01","Carouge, Mouettes",6
+"RUSS00","Russin-Village",6
+"SSCH01","Sous-Chevrens",6
+"TCAR04","Carouge-Tours",6
+"TOUR00","Tourelle",6
+"UNIM01","Uni-Mail",6
+"UNIM99","Uni-Mail",6
+"VEVI01","Vernier-Village",6
+"VIDO02","Vidollet",6
+"VUIL00","Bernex-Vuillonnex",6
+"WEBR00","Weber",6
+"_MOILS","Moillesulaz - CH",6
+"AAIN02","Avenue de l'Ain",5
+"AERO07","Genève-Aéroport-Terminal",5
+"AGAZ00","Usine à Gaz",5
+"AGAZ01","Usine à Gaz",5
+"ANDO00","Anières-Douane",5
+"AREN00","Genève-Aéroport, gare-Arena",5
+"ARME99","Armes",5
+"ATHE03","Athénée",5
+"BAUD10","Curé-Baud",5
+"BELC00","Belle-Cour",5
+"BLTE01","La Belotte",5
+"BNDL00","Bandol",5
+"BNDL99","Bandol",5
+"BXPL00","Bernex-Place",5
+"CBGO00","Chêne-Bourg-Gare-Place",5
+"CCHA01","Crêts-de-Champel",5
+"CCOL00","Cologny-Croisée",5
+"CERN00","CERN",5
+"CERN02","CERN",5
+"CFIL01","Plan-les-Ouates, Champ-Filles",5
+"CING00","Camping Bois-de-Bay",5
+"CLDR00","Calandrini",5
+"CLIG01","Lignon-Cité",5
+"COCH00","Chêne-Bougeries, Conches place",5
+"CRGE09","Carouge-Rondeau",5
+"CYTE01","Cologny-Temple",5
+"EMED00","Ecole-de-Médecine",5
+"ESRT03","Les Esserts",5
+"FEPO00","Ferney, Poterie",5
+"FOUR00","Fourches",5
+"FRAN00","Franchises",5
+"FRET01","Fret",5
+"FRRE03","Bois-des-Frères",5
+"GLOU00","Galeries du Loup",5
+"GPRE01","Grand-Pré",5
+"HERM02","Hermance-Village",5
+"JUMR01","Jussy-Meurets",5
+"LAMA01","Lancy-Mairie",5
+"MCON00","Maconnex-Arcades",5
+"MIRE00","Miremont",5
+"MOIL02","Moillesulaz",5
+"MUET01","Musée d'ethnographie",5
+"MYRN00","Meyrin-Village",5
+"NATI97","Nations",5
+"ONBC00","Onex-Bois Carrien",5
+"ONMA01","Onex-Marché",5
+"PBAL01","Petit-Bel-Air",5
+"PBAL03","Petit-Bel-Air",5
+"PNEV04","Place de Neuve",5
+"PUMA00","Puplinge-Mairie",5
+"PYVI00","Pregny-Village",5
+"RUTH00","Ruth",5
+"SECH00","Perle du Lac",5
+"SIER00","Sierne",5
+"SJCE00","Saint-Julien-Centre",5
+"SJDO01","Saint-Julien-Douane",5
+"SRVI01","Soral, église",5
+"STAL03","De-Staël",5
+"STND04","Stand",5
+"SUSE01","Susette",5
+"TCAR01","Carouge-Tours",5
+"TOCO01","Tour-de-Contrôle",5
+"TRLL01","La Traille",5
+"TRTI08","Tunnel Routier",5
+"UBER01","Petit-Lancy, Morgines",5
+"UNIM04","Uni-Mail",5
+"UNIM98","Uni-Mail",5
+"VARV01","Val-d'Arve",5
+"VERB01","Verbant",5
+"VESY00","Vessy-Plateau",5
+"VIUS00","Vieusseux",5
+"VLON01","Vallon",5
+"VRTC00","Gex-Vertes Campagnes",5
+"VUIL01","Bernex-Vuillonnex",5
+"_GSDNS","Grand-Saconnex-Dne - CH",5
+"AERO02","Genève-Aéroport-Terminal",4
+"AIVC00","Aire-la-Ville-Croisée",4
+"ARAR01","Arare",4
+"BALX01","Balexert",4
+"BARD01","Barde",4
+"BCRE00","Baulacre",4
+"BISA00","Belle-Idée-Réception",4
+"BLID01","Belle-Idée-Centre",4
+"BLTE00","La Belotte",4
+"BOLA01","Bois-du-Lan",4
+"BSSN00","Bossons",4
+"BVYLST","Bovy-Lysberg (ST)",4
+"CAST01","Castan",4
+"CBAC02","Chemin du Bac",4
+"CCAP01","Crêts-de-La-Capite",4
+"CCHA00","Crêts-de-Champel",4
+"CFLO01","Crêts-de-Florissant",4
+"CHAR01","Charrot",4
+"CHAV00","Chavannes-des-Bois",4
+"CHPR00","Vésenaz, Princes",4
+"CLYS00","Bellevue, Ermitage",4
+"CODN01","Colladon",4
+"COUT03","Coutance",4
+"CRCO04","Confignon-Croisée",4
+"CRGE02","Carouge-Rondeau",4
+"CYNT00","Cessy-Centre",4
+"CYRA01","Chancy-Raclerets",4
+"CZPL01","Croix-de-Rozon-Place",4
+"DC00","Dépôt Bachet Coursive",4
+"DELC01","Délices",4
+"EDVA01","Vallet",4
+"FEMA02","Ferney-Mairie",4
+"GAMI00","Gaillard-Millet",4
+"GFAQ02","Grange-Falquet",4
+"GROT01","Grottes",4
+"GRVI00","Meyrin-Gravière",4
+"GSAC95","Grand-Saconnex-Place",4
+"JJAC01","Jean-Jacques",4
+"JVUY00","Vüy",4
+"LERO03","Le Rolliet",4
+"MAIL00","Maillard",4
+"MAZE00","Mazettes",4
+"MGRE01","Montalègre",4
+"MIDE01","Mon-Idée",4
+"MNEU00","Maisons-Neuves",4
+"MONN00","Jussy, Monniaz",4
+"MOTU01","Monthoux",4
+"MTTA01","Motta",4
+"ORMA00","Ormeaux",4
+"ORMA01","Ormeaux",4
+"PBAL05","Petit-Bel-Air",4
+"PIBO00","Pierre à Bochet",4
+"PICY01","Lancy-Piscine",4
+"PLLT00","Pallanterie",4
+"PMAR01","Puplinge, Pré-Marquis",4
+"POST01","Poste",4
+"PRLA01","La Pralay",4
+"PRPI01","Pré-Picot",4
+"PRSM03","Sous-Moulin",4
+"PSAC00","Petit-Saconnex",4
+"PSAC01","Petit-Saconnex",4
+"PSTA00","Parc Stagni",4
+"PUMA01","Puplinge-Mairie",4
+"RAVI00","Ravières",4
+"RAVI01","Ravières",4
+"RIEU02","Rieu",4
+"ROUS00","Collège Rousseau",4
+"SEUJ01","Seujet",4
+"SEVI00","Sézenove-Village",4
+"SISM00","L.-Sismondi",4
+"STND03","Stand",4
+"SUSE00","Susette",4
+"TRNT06","Tronchet",4
+"TRTI02","Tunnel Routier",4
+"VELO01","Vélodrome",4
+"VRDO00","Veyrier-Douane",4
+"VRNT00","Vernets",4
+"VSEG01","Vésenaz-Eglise",4
+"VSUI00","Village-Suisse",4
+"VSUI01","Village-Suisse",4
+"AAIN01","Avenue de l'Ain",3
+"AIRE00","Aïre",3
+"ANCH00","Anières-Chavannes",3
+"APIA01","Appia",3
+"ARME97","Armes",3
+"ATVI00","Athenaz-Village",3
+"AUGS04","Augustins",3
+"AVAN00","Vernier, Avanchets-Etang",3
+"AVIA00","Aviateurs",3
+"AVIA01","Aviateurs",3
+"AVMG00","Avusy-Moulin-de-la-Grave",3
+"BAUD04","Curé-Baud",3
+"BCRE01","Baulacre",3
+"BELL00","Bellerive",3
+"BHET08","Lancy-Bachet-Gare",3
+"BLAN99","Blanche",3
+"BLDO02","Blandonnet",3
+"BLDO06","Blandonnet",3
+"BOHT03","Bouchet",3
+"BOHT05","Bouchet",3
+"BOLA00","Bois-du-Lan",3
+"BOUV01","Les Bouveries",3
+"BRGE00","Bergère",3
+"BTTT01","Belle-Terre-Traité-de-Turin",3
+"BXEG00","Bernex-Eglise",3
+"BXGU00","Bernex-Guillon",3
+"BXMA01","Bernex-Mairie",3
+"BXPL02","Bernex-Place",3
+"BXSA01","Bernex-Saule",3
+"CANO00","Canonnière",3
+"CBAC03","Chemin du Bac",3
+"CBPL00","Chambésy-Place",3
+"CCAP00","Crêts-de-La-Capite",3
+"CETX00","Certoux, village",3
+"CFLO00","Crêts-de-Florissant",3
+"CFOU00","Chemin des Fours",3
+"CHLX00","Choulex",3
+"CHPR01","Vésenaz, Princes",3
+"CHVR00","Chevrier",3
+"CHVR01","Chevrier",3
+"CLCO00","Clinique La Colline",3
+"CLIG02","Lignon-Cité",3
+"COLO05","Colovrex",3
+"COLX00","Ferney-Levant",3
+"CPEL00","La Chapelle",3
+"CRBS00","Courbes",3
+"CRCO02","Confignon-Croisée",3
+"CRTE00","Crête",3
+"CTNT00","Cottenets",3
+"CYDN01","Chancy-Douane",3
+"DANC00","Dancet",3
+"DJST","Dépôt Jonction (ST)",3
+"EDVA00","Vallet",3
+"ESTR01","Essertines",3
+"FAVR02","Place Favre",3
+"FOLN00","Foulon",3
+"FONT02","Fontenette",3
+"FORU01","Forumeyrin",3
+"FRET00","Fret",3
+"GALI01","Gaillard-Libération",3
+"GAMI01","Gaillard-Millet",3
+"GCHH01","Genève-Champel-Gare/Hôpital",3
+"GCHH03","Genève-Champel-Gare/Hôpital",3
+"GEBE00","Genthod-Bellevue-Gare",3
+"GLAI01","Galaise",3
+"GLOU01","Galeries du Loup",3
+"GRES00","Grésy",3
+"GRVI01","Meyrin-Gravière",3
+"GSMA00","Grand-Saconnex-Mairie",3
+"GTVI00","Genthod-Village",3
+"GXGC01","Gex-Charpak",3
+"GYBA00","Baraque-à-Cloud",3
+"GYPO01","Gy-Poste",3
+"HTOU03","Hôpital de La Tour",3
+"ICC00","ICC",3
+"INDE00","Coq-d'Inde",3
+"JALP00","Jardin-Alpin-Vivarium",3
+"JALP04","Jardin-Alpin-Vivarium",3
+"JBRT00","Berthet",3
+"JLIM02","Joli-Mont",3
+"JMON01","Saint-Genis-Jean Monnet",3
+"JOCT09","Jonction",3
+"JUMR00","Jussy-Meurets",3
+"JUPL01","Jussy-Place",3
+"LADO00","La Donzelle",3
+"LAPR01","Lancy-Pont-Rouge-Gare",3
+"LAVI01","Laconnex-Village",3
+"LOUR00","La Loure",3
+"LQUI01","Les Quibières",3
+"LULY05","Lully-Croisée",3
+"MAIX00","Maisonnex",3
+"MALA00","Malagnou",3
+"MANU02","Manufactures",3
+"MARB00","Les Marbriers",3
+"MARB01","Les Marbriers",3
+"MARG01","Marguerite",3
+"MAZE01","Mazettes",3
+"MCON01","Maconnex-Arcades",3
+"MEMA00","Meyrin-Mairie",3
+"MERV00","Mervelet",3
+"MIRE01","Miremont",3
+"MOIL01","Moillesulaz",3
+"MONT02","Annemasse-Parc Montessuit",3
+"NATI96","Nations",3
+"ONEX03","Onex-Salle communale",3
+"OXFR00","Ornex-Fruitière",3
+"PAGN01","Thoiry-Place d'Allemogne",3
+"PBOC00","Pont-Bochet",3
+"PLPA96","Plainpalais",3
+"PNEF00","Place de Neuve (fictif)",3
+"POCH01","Port Choiseul",3
+"PONT02","Pontets",3
+"PPOL00","Pré-Polly",3
+"PR4701","Grand-Saconnex, P+R",3
+"PRBE03","Bernex-P+R",3
+"PRLA00","La Pralay",3
+"PRPI00","Pré-Picot",3
+"PSIE00","Pont de Sierne",3
+"PTLA01","Petit-Lancy-Place",3
+"PXPO00","Palexpo",3
+"REVE00","Reverdin",3
+"RIPP00","Rippaz",3
+"RSMA00","Collonge-Bellerive, Pré-d'Orsat",3
+"SCLO01","Sainte-Clotilde",3
+"SEUJ00","Seujet",3
+"SEYM01","Seymaz",3
+"SRMA00","Soral, Faubourg",3
+"SVEY03","Vessy-Stand de tir",3
+"SYGA01","Satigny-Gare",3
+"UNIM00","Uni-Mail",3
+"VAND00","Vandoeuvres-Village",3
+"VATH01","Thoiry-Centre commercial",3
+"VELO00","Vélodrome",3
+"VEVI02","Vernier-Village",3
+"VIDO00","Vidollet",3
+"VIDO01","Vidollet",3
+"VIDO03","Vidollet",3
+"VRMT00","Vermont",3
+"VRNT01","Vernets",3
+"VROT00","Veyrot",3
+"VTRN02","Veyrier-Tournettes",3
+"VVRA00","Valavran",3
+"ZIPL02","ZIPLO",3
+"AAIN03","Avenue de l'Ain",2
+"ACLP00","Avusy-Creux-du-Loup",2
+"AIVI01","Aire-la-Ville-Centre",2
+"AJEN00","Jeandin",2
+"ALEC01","Avully-Ecole",2
+"ARIA00","Genève, Ariana",2
+"ATHE01","Athénée",2
+"ATPA04","Athenaz-Passeiry",2
+"AUBE01","Aubépine",2
+"AUGS98","Augustins",2
+"AVPP01","Aire-la-Ville-Pont-de-Peney",2
+"AVSY00","Avusy-Village",2
+"BALE00","Battelle",2
+"BALX00","Balexert",2
+"BDOU00","Bourdigny-Douane",2
+"BGRI00","Les Bougeries",2
+"BISE00","La Bise",2
+"BLDO03","Blandonnet",2
+"BLDO05","Blandonnet",2
+"BOCA00","Bois-Caran",2
+"BOHT01","Bouchet",2
+"BOIS00","Boissier",2
+"BOSY00","Bossy",2
+"BOSY01","Bossy",2
+"BOUV00","Les Bouveries",2
+"BUGN01","Bugnons",2
+"BUTN00","Pont-Butin",2
+"BUTN02","Pont-Butin",2
+"BXSA02","Bernex-Saule",2
+"CADO00","Cara-Douane",2
+"CAMP00","Campanules",2
+"CARO01","Caron",2
+"CAST00","Castan",2
+"CBGE00","Chêne-Bourg-Gare-Tour",2
+"CETX01","Certoux, village",2
+"CFOU01","Chemin des Fours",2
+"CHLE00","Chens-sur-Léman",2
+"CHLX01","Choulex",2
+"CHTO00","Genève, Tour de Champel",2
+"CHVO03","Ferney-Château",2
+"CLYS01","Bellevue, Ermitage",2
+"COLO04","Colovrex",2
+"COMA01","Collonges-Marché",2
+"CORB01","Corbillettes",2
+"COTR01","Au Contour",2
+"CRCO01","Confignon-Croisée",2
+"CRCO03","Confignon-Croisée",2
+"CREN00","CO Renard",2
+"CRTE01","Crête",2
+"CRTE02","Crête",2
+"CTGY00","Cartigny-Village",2
+"CTMI02","Contamines",2
+"CYNT01","Cessy-Centre",2
+"CYTE00","Cologny-Temple",2
+"CZDN00","Croix-de-Rozon-Douane",2
+"DLAY01","Delay",2
+"DODE00","La Dode",2
+"EAUM01","Eaumorte-Hameau",2
+"EMED02","Ecole-de-Médecine",2
+"ESRT05","Les Esserts",2
+"ESRT99","Les Esserts",2
+"ETAN01","Etang-Place",2
+"ETOI99","Lancy-Pont-Rouge-Gare/Etoile",2
+"EVOR00","Evordes",2
+"FAVR04","Place Favre",2
+"FEMA01","Ferney-Mairie",2
+"FEUL01","Feuillat",2
+"FLRI01","Florissant",2
+"FORU00","Forumeyrin",2
+"FOSA00","Fossard",2
+"FOUR01","Fourches",2
+"FRDI00","Fraidieu",2
+"FTAI00","Foretaille",2
+"GAVA00","Gavard",2
+"GCLB01","Grange-Collomb",2
+"GCLB02","Grange-Collomb",2
+"GCMP01","Grand-Champ",2
+"GDHA00","Grand-Hangar",2
+"GRVI02","Meyrin-Gravière",2
+"GRVI06","Meyrin-Gravière",2
+"GSMA02","Grand-Saconnex-Mairie",2
+"GVRI00","Genévrière",2
+"GXGC00","Gex-Charpak",2
+"HOPI04","Hôpital",2
+"JALP05","Jardin-Alpin-Vivarium",2
+"JMON00","Saint-Genis-Jean Monnet",2
+"LAPR04","Lancy-Pont-Rouge-Gare",2
+"LAVI00","Laconnex-Village",2
+"LERO05","Le Rolliet",2
+"LERO10","Le Rolliet",2
+"LOCH01","En Louche",2
+"LOCH02","En Louche",2
+"LOCH03","En Louche",2
+"LOUR01","La Loure",2
+"LULI00","Lullier",2
+"LULY00","Lully-Croisée",2
+"LULY04","Lully-Croisée",2
+"MALA01","Malagnou",2
+"MANU00","Manufactures",2
+"MASS00","Massettes",2
+"MATE01","Maternité-Pédiatrie",2
+"MEPR01","Meinier-Pralys",2
+"MERV01","Mervelet",2
+"MIDE02","Mon-Idée",2
+"MLGN00","Malagny",2
+"MLGN01","Malagny",2
+"MLPT00","Malpertuis",2
+"MLPT01","Malpertuis",2
+"MNEU03","Maisons-Neuves",2
+"MOIL07","Moillesulaz",2
+"MOLL00","Mollaz",2
+"MOUI00","La Mouille",2
+"MOUI01","La Mouille",2
+"MTFL00","Montfleury",2
+"MYRN01","Meyrin-Village",2
+"NATI18","Nations",2
+"NATI19","Nations",2
+"OMSB00","Genève, OMS-BIT",2
+"ONBC01","Onex-Bois Carrien",2
+"ONCI01","Onex-Cité",2
+"ORRO01","Ornex-Les Roussets",2
+"PAIL00","Balexert-Pailly",2
+"PBAL02","Petit-Bel-Air",2
+"PEDO00","Perly-Douane",2
+"PEDO01","Perly-Douane",2
+"PEIL03","Peillonnex",2
+"PELO00","La Pelotière",2
+"PIBO01","Pierre à Bochet",2
+"PLPA08","Plainpalais",2
+"PLPA99","Plainpalais",2
+"PLTA01","Planta",2
+"POCH00","Port Choiseul",2
+"POLT00","Thoiry-Place en Poulet",2
+"PONT00","Pontets",2
+"PONT01","Pontets",2
+"PPAL00","Prés-Palais",2
+"PRGR01","Progrès",2
+"PRVI00","Viry P+R",2
+"PXPO11","Palexpo",2
+"QUID01","Quidort",2
+"RCOR02","Route de Corsinge",2
+"REPE01","Repentance",2
+"RIAN00","Riant-Parc",2
+"ROUE01","Rouette",2
+"RTTE00","Rochette",2
+"SHUM00","Saint-Genis-Schuman",2
+"SIGL01","SIG Lignon",2
+"SIGN01","Signal",2
+"SION00","Sionnet",2
+"SLSI00","La Salésienne",2
+"SLSI03","La Salésienne",2
+"SONN01","Sonnex",2
+"SONN02","Sonnex",2
+"SRMA01","Soral, Faubourg",2
+"SRVE01","Serves",2
+"STRC01","Stade Trois-Chêne",2
+"SUMO00","Sur-le-Moulin",2
+"SVEY00","Vessy-Stand de tir",2
+"SVEY02","Vessy-Stand de tir",2
+"SYMA00","Satigny-Mairie",2
+"TGIN03","Tougin-Hôpital",2
+"THMA00","Thoiry-Mairie",2
+"TILL01","Dardagny-Les Tilleuls",2
+"TLIG01","Lignon-Tours",2
+"TRBL00","Trèfle-Blanc",2
+"TRMB01","Trembley",2
+"VACA00","Vernier, Avanchets-Casaï",2
+"VALY05","Bernex-Vailly",2
+"VAND01","Vandoeuvres-Village",2
+"VAUD01","Vaudagne",2
+"VRLP01","Vireloup",2
+"VRVI00","Veyrier-Village",2
+"VXAR01","Versoix-Argand",2
+"VXGA00","Versoix-Gare",2
+"VXLA00","Versoix-Lachenal",2
+"_CERNF","CERN-Dne - F",2
+"_CYDNS","Chancy-Dne_CH",2
+"_DOANS","Anières-Dne - CH",2
+"_GSDNF","Grand-Saconnex-Dne - F",2
+"_PEDOS","Perly-Dne - CH",2
+"ADOU00","Prévessin-Ancienne-Douane",1
+"AERO05","Genève-Aéroport-Terminal",1
+"AGLA01","Prévessin-Les Aglands",1
+"AIRE02","Aïre",1
+"AIVC01","Aire-la-Ville-Croisée",1
+"AIVI00","Aire-la-Ville-Centre",1
+"AJEN01","Jeandin",1
+"ALGE01","Avully-Gennecy",1
+"ALVI01","Avully-Village",1
+"ANCI98","Ancienne",1
+"ANGR00","Anières-Gravière",1
+"ANRS00","Anières-Village",1
+"ANRS01","Anières-Village",1
+"APCB02","Archamps-Pont de Combe",1
+"APIA02","Appia",1
+"ARAR00","Arare",1
+"ATEC00","Athenaz-Ecole",1
+"ATPA03","Athenaz-Passeiry",1
+"ATTV00","Attenville",1
+"ATVI01","Athenaz-Village",1
+"AUBE00","Aubépine",1
+"AUGS02","Augustins",1
+"AVAN01","Vernier, Avanchets-Etang",1
+"AVQO00","Avusy-Les Quoattes",1
+"BADO01","Badosse",1
+"BASL01","Basselat",1
+"BELI01","Bellevue-Limites",1
+"BELS00","Bellins",1
+"BFOU00","Bourg-de-Four",1
+"BGRI01","Les Bougeries",1
+"BHET01","Lancy-Bachet-Gare",1
+"BHET07","Lancy-Bachet-Gare",1
+"BISA01","Belle-Idée-Réception",1
+"BISE01","La Bise",1
+"BLOC01","Château-Bloch",1
+"BOCA02","Bois-Caran",1
+"BOCH00","Bois-Chatton",1
+"BOGA01","Bois-Galland",1
+"BOIS01","Boissier",1
+"BPAQ01","Genève, Bains des Pâquis",1
+"BSEJ00","Beau-Séjour",1
+"BSSY00","Bassy",1
+"BTEC00","Belle-Terre-Ecole",1
+"BTEC01","Belle-Terre-Ecole",1
+"BTPA02","Belle-Terre-Place-de-l'Araire",1
+"BTTT00","Belle-Terre-Traité-de-Turin",1
+"BXEG01","Bernex-Eglise",1
+"CAAM00","Carre-d'Amont",1
+"CAAM01","Carre-d'Amont",1
+"CABO01","Bains de Cressy",1
+"CALA00","Calas",1
+"CAMA97","Carouge-Marché",1
+"CAND01","Ferney-Bois Candide",1
+"CARO00","Caron",1
+"CBET00","Combettes",1
+"CBFO00","Chambésy-Fontaine",1
+"CBGA00","Chambésy-Gare",1
+"CBGE01","Chêne-Bourg-Gare-Tour",1
+"CBGO03","Chêne-Bourg-Gare-Place",1
+"CBOI00","Chemin des Bois",1
+"CBOI01","Chemin des Bois",1
+"CCOL02","Cologny-Croisée",1
+"CCVT01","Croix-de-Chavant",1
+"CDOL00","Champ-Dollon",1
+"CEBE00","Bois-Chébé",1
+"CFIL03","Plan-les-Ouates, Champ-Filles",1
+"CFUS00","Saint-Genis-Champ-Fusy",1
+"CFUS01","Saint-Genis-Champ-Fusy",1
+"CHCQ00","Genève, Chausse-Coq",1
+"CHHA00","Challex-La Halle",1
+"CHMA00","La Chaumaz",1
+"CIPO01","Corsier-Port",1
+"CLGE01","Collonge",1
+"CLLY00","Choully",1
+"CNAE01","Chênaie",1
+"COCH01","Chêne-Bougeries, Conches place",1
+"COLX01","Ferney-Levant",1
+"COMA00","Collonges-Marché",1
+"CONF00","Confignon-Mairie",1
+"CORB00","Corbillettes",1
+"CRBS01","Courbes",1
+"CRCH00","Croix-en-Champagne",1
+"CRMV00","Cartigny-Moulin-de-Vert",1
+"CRMV01","Cartigny-Moulin-de-Vert",1
+"CRNR01","Cornière",1
+"CROA00","Crozet, Avouzon",1
+"CTRS00","Châtaignières",1
+"CVRN00","Chevrens",1
+"CVRN01","Chevrens",1
+"CXCE00","Collex-Centre",1
+"CXCE01","Collex-Centre",1
+"CXEC00","Collex-Ecole",1
+"CYCM00","Cessy-Côte du Moralay",1
+"CYMA00","Cologny-Mairie",1
+"CYRA00","Chancy-Raclerets",1
+"CYUS01","Chancy-Usine",1
+"DEHA00","De Haller",1
+"DEHA01","De Haller",1
+"DLAY00","Delay",1
+"ECOG00","Ecogia",1
+"ECOG01","Ecogia",1
+"ECU00","Ecu",1
+"ESRT06","Les Esserts",1
+"FALQ00","Falquets",1
+"FALQ01","Falquets",1
+"FAUC00","Saint-Genis-CERN Alice",1
+"FEMA05","Ferney-Mairie",1
+"FILI00","Fillion",1
+"FLLH01","Flies, Le Haut",1
+"FOAN00","Anières-Foyer",1
+"FOLN01","Foulon",1
+"FOSA01","Fossard",1
+"FOSA02","Fossard",1
+"FRDI01","Fraidieu",1
+"FTAI01","Foretaille",1
+"GAIU00","La Gabiule",1
+"GCHH00","Genève-Champel-Gare/Hôpital",1
+"GCLB00","Grange-Collomb",1
+"GCMP00","Grand-Champ",1
+"GEBE01","Genthod-Bellevue-Gare",1
+"GEVV01","Genève-Eaux-Vives-Gare/Vadier",1
+"GOS00","Gos",1
+"GRCA00","Grand-Cara",1
+"GSAC05","Grand-Saconnex-Place",1
+"GSMO00","Grand-Saconnex, Morillons",1
+"GSMO01","Grand-Saconnex, Morillons",1
+"GTCH00","Genthod-Chênes",1
+"GTVI01","Genthod-Village",1
+"GVRI02","Genévrière",1
+"GXAI00","Gex-L'Aiglette",1
+"GXAI01","Gex-L'Aiglette",1
+"GXPO00","Gex-Centre",1
+"GYTE00","Gy-Temple",1
+"HACH00","Bernex, Chèvres",1
+"HAMA00","Prévessin-Hauts de Magny",1
+"HGEN00","Genthod, Les Hauts",1
+"HOPI02","Hôpital",1
+"HTAI01","Saint-Genis-Hautains",1
+"HTCH00","Hôpital Trois-Chêne",1
+"HTCH02","Hôpital Trois-Chêne",1
+"HTCH03","Hôpital Trois-Chêne",1
+"HTOU01","Hôpital de La Tour",1
+"HVIL00","Hôtel-de-Ville",1
+"ICC01","ICC",1
+"JBRT01","Berthet",1
+"JUCH00","Jussy-Château",1
+"LABL00","La Blanche",1
+"LABL01","La Blanche",1
+"LACH01","La Chêna",1
+"LADA00","La Dame",1
+"LADA01","La Dame",1
+"LADM00","Landecy-La Mûre",1
+"LAPR02","Lancy-Pont-Rouge-Gare",1
+"LAPR05","Lancy-Pont-Rouge-Gare",1
+"LAVC00","L'Avenir-Croisée",1
+"LAVC01","L'Avenir-Croisée",1
+"LBUR00","Burgy",1
+"LBUR01","Burgy",1
+"LCRE01","Les Crêts",1
+"LERO02","Le Rolliet",1
+"LEVE00","Plage du Vengeron",1
+"LHCY00","Cessy-Les Hauts",1
+"LIBE00","Libellules",1
+"LOCH00","En Louche",1
+"LOEX00","Loëx-Hôpital",1
+"LUCH03","Bernex-Luchepelet",1
+"LUCH91","Bernex-Luchepelet",1
+"LUCH92","Bernex-Luchepelet",1
+"LUGE01","Lully-Village",1
+"MACH00","Machéry",1
+"MACH01","Machéry",1
+"MACH02","Machéry",1
+"MACN00","Malval-Centre Nature",1
+"MAIL99","Maillard",1
+"MALG01","Meyrin, Marais-Long",1
+"MANC00","Mancy",1
+"MANC01","Mancy",1
+"MASS01","Massettes",1
+"MATE02","Maternité-Pédiatrie",1
+"MATG00","Mategnin",1
+"MATG01","Mategnin",1
+"MATH00","Thônex-Mairie",1
+"MATH01","Thônex-Mairie",1
+"MDRZ00","Moulins-de-Drize",1
+"MDRZ04","Moulins-de-Drize",1
+"MEGL00","Meinier-Eglise",1
+"MEGL01","Meinier-Eglise",1
+"MEPR00","Meinier-Pralys",1
+"MGNE01","Montagne",1
+"MLBA01","Moillebeau",1
+"MLVT01","Saint-Genis-Porte de France",1
+"MNEU01","Maisons-Neuves",1
+"MSIL00","Marsillon",1
+"MSQU00","Montesquiou",1
+"MTFL01","Montfleury",1
+"MUGE00","Muguets",1
+"MUGE01","Muguets",1
+"MYRN02","Meyrin-Village",1
+"MYRN03","Meyrin-Village",1
+"MYST00","Meyrin, Stierlin",1
+"NADA00","Nant-d'Avril",1
+"NAIS00","Nant-d'Aisy",1
+"NANT00","Le Nant",1
+"NANT01","Le Nant",1
+"NATI14","Nations",1
+"NATI21","Nations",1
+"NATI23","Nations",1
+"ONCI02","Onex-Cité",1
+"ORRO00","Ornex-Les Roussets",1
+"OULA00","Les Oulaines",1
+"PAIL01","Balexert-Pailly",1
+"PALE01","Palettes",1
+"PALE02","Palettes",1
+"PALE08","Palettes",1
+"PASS01","La Passe",1
+"PBAL04","Petit-Bel-Air",1
+"PBOC01","Pont-Bochet",1
+"PBRU00","Ferney-Planche-Brûlée",1
+"PBRU01","Ferney-Planche-Brûlée",1
+"PCEA00","Pont-Céard-Gare",1
+"PCEA01","Pont-Céard-Gare",1
+"PDRI00","Pont-de-Drize",1
+"PEDI01","Pédiatrie",1
+"PELO01","La Pelotière",1
+"PETR00","Petray",1
+"PFLE01","Pré-Fleuri",1
+"PFON00","Pré-de-la-Fontaine",1
+"PFON01","Pré-de-la-Fontaine",1
+"PFUM00","Vernier-Parfumerie",1
+"PGRA00","Petite-Grave",1
+"PGRA01","Petite-Grave",1
+"PLAI00","La Plaine-Gare",1
+"PLAI01","La Plaine-Gare",1
+"PLEY01","Palais Eynard",1
+"PLIO01","Saint-Genis-Lion",1
+"PLIO02","Saint-Genis-Lion",1
+"PLLT01","Pallanterie",1
+"PLTA00","Planta",1
+"PONT03","Pontets",1
+"PPOL01","Pré-Polly",1
+"PRBE02","Bernex-P+R",1
+"PRBE91","Bernex-P+R",1
+"PRBE92","Bernex-P+R",1
+"PREC00","Pregnin, école",1
+"PREC01","Pregnin, école",1
+"PRGM03","Meyrin-Gare",1
+"PRMA91","Bernex-Pré-Marais",1
+"PRMO01","Pré-Monnard",1
+"PRSM04","Sous-Moulin",1
+"PRVG01","Veigy-Douane",1
+"PRVT01","Préventorium",1
+"PSGE00","Presinge-Village",1
+"PSGE01","Presinge-Village",1
+"PSTA01","Parc Stagni",1
+"PTLA02","Petit-Lancy-Place",1
+"PTOU01","Les Petoux",1
+"PUFR00","Puplinge-Frémis",1
+"PYMA00","Pregny-Mairie",1
+"QARV01","Queue-d'Arve",1
+"QARV03","Queue-d'Arve",1
+"QUID00","Quidort",1
+"QUID99","Quidort",1
+"RIPP01","Rippaz",1
+"RORE00","Roselière",1
+"ROUE00","Rouette",1
+"RPOS01","Le Reposoir",1
+"RSMA01","Collonge-Bellerive, Pré-d'Orsat",1
+"RUTH01","Ruth",1
+"SADN00","Sauverny-Douane",1
+"SADN01","Sauverny-Douane",1
+"SAUS01","Saussac",1
+"SCEC00","Sainte-Cécile",1
+"SCEC01","Sainte-Cécile",1
+"SCHA00","Seuchat",1
+"SCHA01","Seuchat",1
+"SEFE00","Sézenove-Ferrand",1
+"SERF00","Sézegnin-Le Renfort",1
+"SERF01","Sézegnin-Le Renfort",1
+"SEVI01","Sézenove-Village",1
+"SEZG01","Sézegnin-Village",1
+"SGAS01","Saint-Genis, Allondon Sud",1
+"SGBO01","Sergy-Centre",1
+"SGLO00","Sergy-Les Longets",1
+"SGNY00","Ségny-Centre",1
+"SHUM01","Saint-Genis-Schuman",1
+"SIER01","Sierne",1
+"SIGL00","SIG Lignon",1
+"SISM01","L.-Sismondi",1
+"SJCE01","Saint-Julien-Centre",1
+"SJHU01","Saint-Julien-Hutins",1
+"SLEG00","Genève, Saint-Léger",1
+"SLOU00","Saut-du-Loup",1
+"SLOU01","Saut-du-Loup",1
+"SLSI01","La Salésienne",1
+"SMAU00","Saint-Maurice",1
+"SOBB01","Soral, Bois-de-By",1
+"SOLE00","Le Soleil",1
+"SOLE01","Le Soleil",1
+"SONN03","Sonnex",1
+"SRVI00","Soral, église",1
+"SUMO01","Sur-le-Moulin",1
+"SVEY01","Vessy-Stand de tir",1
+"SVON01","Savonnière (Hôpital de Bellerive)",1
+"SYCS00","Satigny-Centre sportif",1
+"SYEG00","Satigny-Temple",1
+"SYPO01","Satigny-Poste",1
+"TACO00","Taconnerie",1
+"THGA00","Thoiry-Gare",1
+"THMA01","Thoiry-Mairie",1
+"TLIG02","Lignon-Tours",1
+"TOUV00","Touvière",1
+"TRMB03","Trembley",1
+"TRNT05","Tronchet",1
+"TRNT08","Tronchet",1
+"TRTI04","Tunnel Routier",1
+"TRTI05","Tunnel Routier",1
+"TUIL00","La Tuilière",1
+"TULE00","Les Tuileries-Gare",1
+"TULE01","Les Tuileries-Gare",1
+"TURA00","Turaines",1
+"TVER01","Taverney",1
+"TXVI01","Troinex-Ville",1
+"VACC00","Vandoeuvres-Centre communal",1
+"VALY02","Bernex-Vailly",1
+"VALY04","Bernex-Vailly",1
+"VALY06","Bernex-Vailly",1
+"VAND02","Vandoeuvres-Village",1
+"VATH00","Thoiry-Centre commercial",1
+"VDUR00","Duret",1
+"VERB00","Verbant",1
+"VERN01","Vernes",1
+"VIEG00","Viry-Eglise",1
+"VLAI01","Valais",1
+"VLLA00","Villars",1
+"VLLA01","Villars",1
+"VRBE01","Varembé",1
+"VREC01","Veyrier-Ecole",1
+"VRVI01","Veyrier-Village",1
+"VTRN03","Veyrier-Tournettes",1
+"VTTE00","Villette",1
+"VTTE01","Villette",1
+"VUAT00","Vuattes",1
+"VVRA02","Valavran",1
+"VXAR00","Versoix-Argand",1
+"VXBO00","Versoix-Bourg",1
+"VXGA01","Versoix-Gare",1
+"VXSI00","Versoix-La Scie",1
+"ZIMG02","ZIMEYSA-Gare",1
+"ZIMG04","ZIMEYSA-Gare",1
+"ZIMO03","ZIMOGA",1
+"ZIPL10","ZIPLO",1
+"_HEDOS","Hermance-Dne - CH",1
+"_LADNS","Landecy-Dne - CH",1
