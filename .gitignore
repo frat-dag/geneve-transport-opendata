@@ -25,19 +25,14 @@ Thumbs.db
 # VS Code
 .vscode/
 
-# document analyse confidentielle
-outputs/TPG_confidentiel.md
+# analyse confidentielle, non publiee
+outputs/note_confidentielle.md
 
 #outputs en général (bcp de fichiers inutiles)
 outputs/
 
 # Documents de travail internes, ne jamais publier
-CORRECTIONS.md
-PASSATION_*.md
-CONTEXTE_EXTERNE.md
-DOCUMENTATION_TECHNIQUE.md
-JOURNAL_ANALYTIQUE.md
-REPRISE_PROJET.md
+_interne/
 R/old_code_AVRIL/
 figures/old_figures/
 logs/
