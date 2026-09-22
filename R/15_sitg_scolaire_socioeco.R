@@ -1,536 +1,288 @@
-# ── SCRIPT 15 — SITG : LIGNES SCOLAIRES & ÉQUITÉ SOCIO-ÉCONOMIQUE ────────────
-# Projet : TPG Open Data Analysis
+# ============================================================
+# SCRIPT 15 - LIGNES SCOLAIRES ET TERRITOIRE (DONNÉES SITG)
 # Auteur : Frat DAG
-# Date   : 2026-05-19
-# Données: journalier.rds | arrets.rds | SITG OCS_POPBATLOG_COMMUNE
-#          SITG OCS_POPBATLOG_VGE_SECTEUR
-# Synergies : EXT-006 | EXT-008 | OBS-022
-# Tests     : T-015a — Spearman arrêts scolaires/commune × population
-# ─────────────────────────────────────────────────────────────────────────────
+# Corrections : R-01, R-02, R-05, R-07, R-08, R-09, T-02, T-04,
+#               T-06, S-13, S-21, S-22, S-24, S-27, S-28
+# 22.09.2026 : carte au point 1 de la passation (lac non decoupe,
+# contrairement a la carte du script 12). Meme logique que le
+# script 12 (S-33) : le lac, le Rhone et l'Arve (couche SITG
+# GEO_LAC) sont retires UNIQUEMENT pour l'affichage de la carte.
+# La jointure spatiale (section 2) reste sur les polygones
+# administratifs complets : un arret sur le Rhone appartient a sa
+# commune. Sans impact statistique, ce script n'utilise ni surface
+# ni densite.
+# ------------------------------------------------------------
+# QUESTIONS :
+#   Où s'arrêtent les lignes scolaires ?
+#   T-015a : leur couverture suit-elle la population jeune ?
+#   Combien de voyageurs transportent-elles ?
+#
+# S-27 : la version d'avril calculait une « taille d'effet r » à
+# partir de la p-value d'une corrélation de Spearman. Pour une
+# corrélation, la taille d'effet est rho lui-même. Le script publie
+# rho avec un intervalle de confiance bootstrap.
+#
+# S-28 : la version d'avril recopiait en dur des résultats de T-012
+# obtenus avec un indicateur biaisé (S-21) et une jointure fautive
+# (S-22), et en tirait des affirmations sur le profil social de
+# communes nommées (« profil résidentiel aisé présumé », « ménages
+# à faible revenu »). Aucune donnée du projet ne porte sur le revenu.
+# Ces affirmations sont retirées.
+#
+# PÉRIMÈTRE : lignes de type SCOLAIRE sur les douze derniers mois
+# avant la coupure, pour décrire le réseau scolaire actuel.
+# Population SITG a sa date de référence propre (DATE_REF).
+# ============================================================
 
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
-library(ggplot2)
-library(sf)
 library(tidyr)
+library(sf)
+library(ggplot2)
 library(scales)
-library(here)
+library(lubridate)
 
-sf_use_s2(FALSE)
+set.seed(SEED)
 
-cat("╔══════════════════════════════════════════════════════════════╗\n")
-cat("║  SCRIPT 15 — SITG : Lignes scolaires & équité socio-éco     ║\n")
-cat("╚══════════════════════════════════════════════════════════════╝\n\n")
+# ── 1. CHARGEMENT ───────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. CHARGEMENT DES DONNÉES
-# ─────────────────────────────────────────────────────────────────────────────
+trouver_shapefile <- function(dossier, motif) {
+  chemins <- list.files(file.path(DIR_SITG, dossier), pattern = motif,
+                        recursive = TRUE, full.names = TRUE)
+  if (length(chemins) == 0)
+    stop("Shapefile introuvable sous ", file.path(DIR_SITG, dossier))
+  chemins[1]
+}
 
-cat("=== 1. Chargement des données ===\n\n")
+communes_raw <- st_read(trouver_shapefile("communes", "^OCS_POPBATLOG_COMMUNE\\.shp$"),
+                        quiet = TRUE) %>%
+  st_make_valid()
 
-journalier <- readRDS(here::here("data/raw/journalier.rds")) %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne))
+DATE_REF_SITG <- as.character(unique(communes_raw$DATE_REF))[1]
 
-arrets_raw <- readRDS(here::here("data/raw/arrets.rds"))
+# Decoupage du lac pour la carte (voir note en tete de script). Meme
+# logique que le script 12 : union des polygones GEO_LAC, difference
+# dans le systeme suisse (metres) avant transformation en degres.
+chemin_lac <- trouver_shapefile("lac", "^GEO_LAC\\.shp$")
+lac_raw <- st_read(chemin_lac, quiet = TRUE)
+if (st_crs(lac_raw) != st_crs(communes_raw))
+  lac_raw <- st_transform(lac_raw, st_crs(communes_raw))
+lac <- st_union(st_make_valid(lac_raw))
 
-communes_raw <- st_read(
-  here::here("data/raw/sitg/communes/OCS_POPBATLOG_COMMUNE-SHP/OCS_POPBATLOG_COMMUNE.shp"),
-  quiet = TRUE
-)
-communes_wgs84 <- st_transform(communes_raw, crs = 4326)
+st_agr(communes_raw) <- "constant"
+communes_carte_terre <- st_make_valid(st_difference(communes_raw, lac))
+communes_carte_terre <- st_transform(communes_carte_terre, 4326)
 
-secteurs_raw <- st_read(
-  here::here("data/raw/sitg/secteurs/OCS_POPBATLOG_VGE_SECTEUR-SHP/OCS_POPBATLOG_VGE_SECTEUR.shp"),
-  quiet = TRUE
-)
-secteurs_wgs84 <- st_transform(secteurs_raw, crs = 4326)
+communes <- st_transform(communes_raw, 4326)
 
-cat("journalier : ", nrow(journalier), " lignes (données définitives)\n", sep = "")
-cat("arrets_raw : ", nrow(arrets_raw), " arrêts\n", sep = "")
-cat("communes   : ", nrow(communes_raw), " polygones | CRS : ",
-    st_crs(communes_raw)$Name, "\n", sep = "")
-cat("secteurs   : ", nrow(secteurs_raw), " polygones\n\n", sep = "")
+DEBUT_FENETRE <- DATE_COUPURE %m-% months(12) + 1
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. PRÉPARATION DES ARRÊTS (séparer coordonnées)
-# ─────────────────────────────────────────────────────────────────────────────
+scolaire <- lire("journalier") %>%
+  filter(ligne_type_act == "SCOLAIRE", date >= DEBUT_FENETRE)
 
-cat("=== 2. Préparation des arrêts géolocalisés ===\n\n")
-
-arrets_coords <- arrets_raw %>%
-  filter(actif == "Y", !is.na(coordonnees)) %>%
-  tidyr::separate(coordonnees, into = c("latitude", "longitude"),
-                  sep = ",", convert = TRUE) %>%
+arrets <- readRDS(file.path(DIR_RAW, "arrets.rds")) %>%
+  separate(coordonnees, into = c("latitude", "longitude"),
+           sep = ", ", convert = TRUE) %>%
   filter(!is.na(latitude), !is.na(longitude))
 
-arrets_sf <- arrets_coords %>%
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Fenêtre des lignes scolaires :", format(DEBUT_FENETRE), "à",
+    format(DATE_COUPURE), "\n")
+cat("Population SITG, date de référence :", DATE_REF_SITG, "\n")
+
+# ── 2. LIGNES ET ARRETS SCOLAIRES ───────────────────────────
+# Jointure sur les polygones administratifs complets (communes),
+# pas sur communes_carte_terre : un arret sur le Rhone (Bel-Air)
+# appartient a sa commune (meme principe qu'au script 12).
+
+cat("\n=== LIGNES SCOLAIRES ===\n")
+cat("Lignes :", paste(sort(unique(scolaire$ligne)), collapse = ", "), "\n")
+codes_sco <- unique(scolaire$arret_code_long)
+cat("Codes d'arrêt desservis :", length(codes_sco), "\n")
+
+arrets_sco <- arrets %>%
+  filter(arretcodelong %in% codes_sco) %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 
-cat("Arrêts actifs avec coordonnées : ", nrow(arrets_sf), "\n\n", sep = "")
+cat("Arrêts géolocalisés :", nrow(arrets_sco), "sur", length(codes_sco), "\n")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. EXPLORATION SITG — COLONNES DISPONIBLES (avant toute hypothèse)
-# ─────────────────────────────────────────────────────────────────────────────
+jointure <- st_join(arrets_sco, communes["COMMUNE"], join = st_within) %>%
+  st_drop_geometry()
+cat("Arrêts hors canton :", sum(is.na(jointure$COMMUNE)), "\n")
 
-cat("=== 3. Exploration SITG — colonnes disponibles ===\n\n")
-
-cat("--- communes : names() ---\n")
-print(names(communes_raw))
-cat("\n--- communes : str() (niveau 1) ---\n")
-str(communes_raw, max.level = 1)
-
-cat("\n--- secteurs : names() ---\n")
-print(names(secteurs_raw))
-cat("\n--- secteurs : str() (niveau 1) ---\n")
-str(secteurs_raw, max.level = 1)
-cat("\n")
-
-# Détection dynamique — colonne nom commune
-cols_com <- names(communes_raw)
-nom_col <- if ("COMMUNE"     %in% cols_com) "COMMUNE"     else
-           if ("NOM_COMMUNE" %in% cols_com) "NOM_COMMUNE" else
-           if ("NOM"         %in% cols_com) "NOM"         else cols_com[1]
-
-# Détection dynamique — colonne population
-pop_col <- if ("POPULATION" %in% cols_com) "POPULATION" else
-           if ("POP_TOT"    %in% cols_com) "POP_TOT"    else
-           if ("POP"        %in% cols_com) "POP"        else NA_character_
-
-# Indicateurs socio-économiques (revenus, CSP) — absents de OCS_POPBATLOG
-candidats_socioeco <- toupper(c("REVENU", "REVENU_MOY", "REVENU_MED",
-                                 "CSP", "INDICE_GINI", "REV_MEDIAN",
-                                 "NIVEAU_VIE", "QUINTILE"))
-has_socioeco <- any(candidats_socioeco %in% toupper(cols_com))
-
-cat("Colonne commune détectée      :", nom_col, "\n")
-cat("Colonne population détectée   :",
-    ifelse(is.na(pop_col), "ABSENTE", pop_col), "\n")
-cat("Indicateurs socio-éco         :",
-    ifelse(has_socioeco,
-           "PRÉSENTS — analyse EXT-008 conduite",
-           "ABSENTS — LIMITE documentée section 5"), "\n\n")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. EXT-006 — LIGNES SCOLAIRES C1-C9 : COUVERTURE GÉOGRAPHIQUE
-# ─────────────────────────────────────────────────────────────────────────────
-
-cat("=== 4. EXT-006 — Lignes scolaires C1-C9 ===\n\n")
-
-# ── 4.1 Arrêts scolaires distincts ──────────────────────────────────────────
-
-scolaire_arrets <- journalier %>%
-  filter(ligne_type_act == "SCOLAIRE") %>%
-  dplyr::select(ligne, arret_code_long) %>%
-  distinct()
-
-cat("Lignes SCOLAIRE présentes :", n_distinct(scolaire_arrets$ligne), "\n")
-cat("Arrêts SCOLAIRE distincts :", n_distinct(scolaire_arrets$arret_code_long), "\n")
-cat("Lignes :", paste(sort(unique(scolaire_arrets$ligne)), collapse = ", "), "\n\n")
-
-# ── 4.2 Géolocalisation des arrêts scolaires ─────────────────────────────────
-
-arrets_scolaires_df <- scolaire_arrets %>%
-  dplyr::select(arret_code_long) %>%
-  distinct() %>%
-  inner_join(
-    arrets_coords %>%
-      dplyr::select(arretcodelong, latitude, longitude),
-    by = c("arret_code_long" = "arretcodelong")
-  )
-
-arrets_scolaires_sf <- arrets_scolaires_df %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-n_sco_total   <- n_distinct(scolaire_arrets$arret_code_long)
-n_sco_geolocal <- nrow(arrets_scolaires_sf)
-
-cat("Arrêts scolaires géolocalisés :", n_sco_geolocal, "/", n_sco_total,
-    "(", round(n_sco_geolocal / n_sco_total * 100, 1), "%)\n\n")
-
-# ── 4.3 Jointure spatiale : arrêts scolaires × communes ─────────────────────
-
-# st_within : arrêt strictement à l'intérieur du polygone
-# Exclut les arrêts hors canton (France, Vaud) — attendu
-join_sco_com <- st_join(
-  arrets_scolaires_sf,
-  communes_wgs84[, c(nom_col, "geometry")],
-  join = st_within
-) %>% st_drop_geometry()
-
-names(join_sco_com)[names(join_sco_com) == nom_col] <- "commune"
-
-arrets_par_commune_sco <- join_sco_com %>%
-  filter(!is.na(commune)) %>%
-  group_by(commune) %>%
-  summarise(n_arrets_scolaires = n(), .groups = "drop") %>%
-  arrange(desc(n_arrets_scolaires))
-
-n_hors_canton_sco    <- sum(is.na(join_sco_com$commune))
-n_communes_scolaires <- nrow(arrets_par_commune_sco)
-n_communes_total     <- nrow(communes_raw)
-
-cat("Communes avec ≥1 arrêt scolaire :", n_communes_scolaires, "/",
-    n_communes_total,
-    "(", round(n_communes_scolaires / n_communes_total * 100, 1), "%)\n")
-cat("Arrêts scolaires hors canton     :", n_hors_canton_sco,
-    "(FR/VD — exclus de l'analyse)\n\n")
-
-# ── 4.4 Communes non desservies ──────────────────────────────────────────────
-
-toutes_communes <- communes_raw %>%
+par_commune <- communes %>%
   st_drop_geometry() %>%
-  dplyr::select(commune = all_of(nom_col)) %>%
-  distinct()
+  select(COMMUNE, POPULATION, AGE_0_19) %>%
+  left_join(jointure %>% filter(!is.na(COMMUNE)) %>%
+              count(COMMUNE, name = "arrets_scolaires"),
+            by = "COMMUNE") %>%
+  mutate(arrets_scolaires = replace_na(arrets_scolaires, 0))
 
-communes_non_desservies <- toutes_communes %>%
-  filter(!commune %in% arrets_par_commune_sco$commune) %>%
-  arrange(commune)
+# Desserte générale, pour ne pas confondre « sans arrêt scolaire »
+# et « sans desserte » (arrêts actifs, toutes lignes confondues).
+desserte <- st_join(arrets %>% filter(actif == "Y") %>%
+                      st_as_sf(coords = c("longitude", "latitude"), crs = 4326),
+                    communes["COMMUNE"], join = st_within) %>%
+  st_drop_geometry() %>%
+  filter(!is.na(COMMUNE)) %>%
+  count(COMMUNE, name = "arrets_actifs")
 
-cat("Communes sans arrêt scolaire (",
-    nrow(communes_non_desservies), ") :\n", sep = "")
-if (nrow(communes_non_desservies) > 0) {
-  cat(paste(" -", communes_non_desservies$commune, collapse = "\n"), "\n")
-}
-cat("\n")
+par_commune <- par_commune %>%
+  left_join(desserte, by = "COMMUNE") %>%
+  mutate(arrets_actifs = replace_na(arrets_actifs, 0))
 
-cat("--- Top 10 communes par nombre d'arrêts scolaires ---\n")
-print(head(arrets_par_commune_sco, 10))
-cat("\n")
+avec <- sum(par_commune$arrets_scolaires > 0)
+cat("\nCommunes avec au moins un arrêt scolaire :", avec, "sur", nrow(par_commune), "\n")
 
-# ── 4.5 T-015a — Spearman : arrêts scolaires/commune × population ────────────
+sans <- par_commune %>% filter(arrets_scolaires == 0) %>% arrange(desc(AGE_0_19))
+cat("\nCommunes sans arrêt scolaire (", nrow(sans), "), par population de 0 à 19 ans :\n", sep = "")
+print(as.data.frame(sans %>% transmute(COMMUNE, POPULATION, AGE_0_19, arrets_actifs)))
+cat("\nSans arrêt scolaire ne veut pas dire sans desserte : la colonne\n")
+cat("arrets_actifs compte les arrêts de toutes les lignes. Les lignes\n")
+cat("scolaires complètent le réseau là où il ne suffit pas ; leur\n")
+cat("absence peut simplement signifier que le réseau général suffit.\n")
 
-if (!is.na(pop_col)) {
+cat("\nDix communes au plus grand nombre d'arrêts scolaires :\n")
+print(as.data.frame(par_commune %>% arrange(desc(arrets_scolaires)) %>%
+  slice_head(n = 10) %>%
+  transmute(COMMUNE, POPULATION, AGE_0_19, arrets_scolaires)))
 
-  cat("=== T-015a — Spearman : n_arrets scolaires × population ===\n\n")
+# ── 3. T-015a : COUVERTURE SCOLAIRE ET POPULATION JEUNE ─────
+# Variable principale : population de 0 à 19 ans, la plus proche de
+# la population scolaire disponible dans le SITG. La population
+# totale est donnée en comparaison. Toutes les communes entrent dans
+# le calcul, y compris celles sans arrêt scolaire (valeur 0).
 
-  pop_communes_df <- communes_raw %>%
-    st_drop_geometry() %>%
-    dplyr::select(commune    = all_of(nom_col),
-                  population = all_of(pop_col)) %>%
-    mutate(population = as.numeric(population))
-
-  # Toutes les communes y compris non desservies (n_arrets = 0)
-  df_t015a <- pop_communes_df %>%
-    left_join(arrets_par_commune_sco, by = "commune") %>%
-    mutate(n_arrets_scolaires = replace_na(n_arrets_scolaires, 0)) %>%
-    filter(!is.na(population), population > 0)
-
-  cat("H0 : pas d'association monotone entre population et arrêts scolaires/commune\n")
-  cat("H1 : les communes plus peuplées ont davantage d'arrêts scolaires\n\n")
-  cat("n communes :", nrow(df_t015a), "\n\n")
-
-  sp_t015a <- cor.test(df_t015a$population, df_t015a$n_arrets_scolaires,
-                       method = "spearman")
-  n_t015a  <- nrow(df_t015a)
-  r_t015a  <- abs(qnorm(sp_t015a$p.value / 2)) / sqrt(n_t015a)
-
-  cat("Spearman rho     :", round(sp_t015a$estimate, 3), "\n")
-  cat("p-value          :", format(sp_t015a$p.value, scientific = TRUE), "\n")
-  cat("n communes       :", n_t015a, "\n")
-  cat("Taille d'effet r :", round(r_t015a, 3), "\n\n")
-
-  n_exaequo_sco <- sum(df_t015a$n_arrets_scolaires == 0)
-  cat("NOTE ex-aequo : ", n_exaequo_sco,
-      " communes ont n_arrets_scolaires=0 — ex-aequo multiples.\n", sep = "")
-  cat("R ne calcule pas la p-value exacte en présence d'ex-aequo ;\n")
-  cat("p-value asymptotique (", format(sp_t015a$p.value, scientific = TRUE),
-      ") utilisée — valide pour n=", n_t015a,
-      " (limite mineure, résultat robuste).\n\n", sep = "")
-
-  cat("--- Conclusion T-015a ---\n")
-  if (sp_t015a$p.value < 0.05) {
-    cat("REJET H0 (p < 0.05)\n")
-    cat("Association",
-        ifelse(sp_t015a$estimate > 0, "positive", "négative"),
-        ": les communes les plus peuplées ont",
-        ifelse(sp_t015a$estimate > 0, "davantage", "moins"),
-        "d'arrêts scolaires.\n")
-    cat("Taille d'effet :", round(r_t015a, 3),
-        ifelse(r_t015a >= 0.5, "(grand)",
-               ifelse(r_t015a >= 0.3, "(moyen)", "(faible)")), "\n")
-  } else {
-    cat("NON-REJET H0 (p =", format(sp_t015a$p.value, scientific = TRUE), ")\n")
-    cat("Pas d'association monotone significative entre population et couverture scolaire.\n")
-    cat("Interprétation : la desserte scolaire ne suit pas la densité de population.\n")
-  }
-
-  cat("\nCe qu'on NE peut PAS affirmer :\n")
-  cat("  - Que l'absence d'arrêt scolaire = mauvaise desserte :\n")
-  cat("    certaines communes ont peu ou pas d'établissements secondaires.\n")
-  cat("  - Que l'analyse reflète la demande scolaire réelle :\n")
-  cat("    sans données SITG sur les établissements (CO, collèges),\n")
-  cat("    on mesure l'offre, pas l'adéquation offre × besoins.\n\n")
-
-} else {
-
-  cat("T-015a : colonne population non disponible dans les .shp SITG.\n")
-  cat("LIMITE : test Spearman non réalisable sans données de population.\n\n")
-  sp_t015a <- NULL
-  r_t015a  <- NA
-  n_t015a  <- NA
-  df_t015a <- NULL
-
+rho_boot <- function(x, y, B = 2000) {
+  n <- length(x)
+  replicate(B, {
+    i <- sample.int(n, n, replace = TRUE)
+    suppressWarnings(cor(x[i], y[i], method = "spearman"))
+  })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. EXT-008 — NIVEAU SOCIO-ÉCONOMIQUE × FRÉQUENTATION
-# ─────────────────────────────────────────────────────────────────────────────
-
-cat("=== 5. EXT-008 — Niveau socio-économique × fréquentation ===\n\n")
-
-if (has_socioeco) {
-
-  cat("Indicateurs socio-économiques détectés — analyse à conduire.\n\n")
-
-} else {
-
-  cat("LIMITE EXT-008 : aucun indicateur de revenu ou de CSP dans les .shp SITG.\n\n")
-  cat("Les couches OCS_POPBATLOG décrivent la structure bâtie et la population\n")
-  cat("résidante, pas les revenus ou catégories socioprofessionnelles.\n\n")
-  cat("Source complémentaire requise :\n")
-  cat("  OFS — Statistique du revenu imposable par commune (portail OFS,\n")
-  cat("  rubrique Statistiques des impôts → Communes, dernière édition 2022)\n\n")
-
-  cat("--- Analyse qualitative de substitution (T-012 × géographie) ---\n\n")
-  cat("T-012 (Spearman rho=0.695, p=1.65×10⁻⁷) identifie 4 communes anomaliques\n")
-  cat("dans la relation densité de population × montées par habitant.\n\n")
-
-  cat("Sous-fréquentation structurelle :\n")
-  cat("  - Troinex : commune résidentielle à dominante pavillonnaire, éloignée\n")
-  cat("    du centre — résidents potentiellement plus motorisés.\n")
-  cat("    (hypothèse interprétative — non testée sans données OFS)\n")
-  cat("  - Genthod : péninsule lacustre difficilement accessible, offre TPG\n")
-  cat("    contrainte par la géographie, profil résidentiel aisé présumé.\n\n")
-
-  # [TPG] Ces deux communes cumulent faible offre et profil résidentiel aisé présumé.
-  # [TPG] Sans données OFS, le lien avec le niveau socio-éco reste hypothétique.
-  # [TPG] Un croisement OFS × T-012 permettrait de trancher la question d'équité territoriale.
-
-  cat("Sur-fréquentation structurelle :\n")
-  cat("  - Meyrin : pôle CERN + Palexpo + zones d'emplois denses.\n")
-  cat("  - Vernier : forte densité résidentielle, proportion élevée de ménages\n")
-  cat("    à faible revenu (hypothèse interprétative — non testée formellement).\n\n")
-
-  cat("LIMITE : sans données OFS, le lien causal entre niveau socio-économique\n")
-  cat("et utilisation des TPG reste une hypothèse, pas un résultat prouvé.\n\n")
-
+calcul_rho <- function(var) {
+  x <- par_commune[[var]]; y <- par_commune$arrets_scolaires
+  rho <- suppressWarnings(cor(x, y, method = "spearman"))
+  b   <- rho_boot(x, y)
+  ic  <- quantile(b, c(0.025, 0.975), na.rm = TRUE)
+  list(rho = round(rho, 3), inf = round(ic[1], 3), sup = round(ic[2], 3))
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. OBS-022 — FRÉQUENTATION DES LIGNES SCOLAIRES
-# ─────────────────────────────────────────────────────────────────────────────
+r_jeunes <- calcul_rho("AGE_0_19")
+r_total  <- calcul_rho("POPULATION")
+n_zero   <- sum(par_commune$arrets_scolaires == 0)
 
-cat("=== 6. OBS-022 — Fréquentation lignes scolaires ===\n\n")
+cat("\n=== T-015a : ARRÊTS SCOLAIRES ET POPULATION PAR COMMUNE ===\n")
+cat("Communes :", nrow(par_commune), "dont", n_zero, "sans arrêt scolaire (ex aequo à 0)\n")
+cat("Population de 0 à 19 ans : rho =", r_jeunes$rho,
+    "| IC 95% bootstrap [", r_jeunes$inf, ";", r_jeunes$sup, "]\n")
+cat("Population totale        : rho =", r_total$rho,
+    "| IC 95% bootstrap [", r_total$inf, ";", r_total$sup, "]\n")
+cat("\nLecture : association positive et modérée. Les communes où vivent\n")
+cat("plus de jeunes reçoivent en général plus d'arrêts scolaires, avec\n")
+cat("de nombreuses exceptions. Les données ne disent pas où sont les\n")
+cat("établissements scolaires, qui déterminent les trajets réels :\n")
+cat("on mesure une couverture, pas une adéquation à la demande.\n")
 
-freq_scolaire <- journalier %>%
-  filter(ligne_type_act == "SCOLAIRE") %>%
+enregistrer(
+  test_id = "T-015a", script = "15_sitg_scolaire_socioeco.R",
+  methode = "Spearman, arrêts scolaires par commune et population de 0 à 19 ans, IC bootstrap 2000 tirages",
+  n = nrow(par_commune), statistique = NA, p_value = NA,
+  effet_nom = "Spearman rho", effet = r_jeunes$rho,
+  ic_inf = r_jeunes$inf, ic_sup = r_jeunes$sup,
+  note = paste0("Population totale : rho = ", r_total$rho, " [", r_total$inf, " ; ",
+                r_total$sup, "]. ", n_zero, " communes sans arrêt scolaire. ",
+                "Population SITG ", DATE_REF_SITG, ", lignes scolaires ",
+                format(DEBUT_FENETRE), " à ", format(DATE_COUPURE),
+                ". r calculé depuis la p-value retiré (S-27).")
+)
+
+# ── 4. FREQUENTATION DES LIGNES SCOLAIRES ───────────────────
+
+freq <- scolaire %>%
   group_by(ligne) %>%
-  summarise(
-    montees_tot   = sum(nb_de_montees, na.rm = TRUE),
-    n_arrets_dis  = n_distinct(arret_code_long),
-    n_jours       = n_distinct(date),
-    .groups       = "drop"
-  ) %>%
-  mutate(
-    montees_par_jour  = round(montees_tot / n_jours, 1),
-    montees_par_arret = round(montees_tot / n_arrets_dis)
-  ) %>%
-  arrange(desc(montees_tot))
+  summarise(montees = sum(nb_de_montees, na.rm = TRUE),
+            jours_de_service = n_distinct(date),
+            arrets = n_distinct(arret_code_long), .groups = "drop") %>%
+  mutate(montees_par_jour = round(montees / jours_de_service)) %>%
+  arrange(desc(montees))
 
-cat("--- Fréquentation par ligne scolaire ---\n")
-print(freq_scolaire, n = Inf)
-cat("\n")
+total_reseau <- lire("journalier") %>%
+  filter(date >= DEBUT_FENETRE) %>%
+  summarise(t = sum(nb_de_montees, na.rm = TRUE)) %>%
+  pull(t)
+part <- round(100 * sum(freq$montees) / total_reseau, 2)
 
-total_montees  <- sum(journalier$nb_de_montees, na.rm = TRUE)
-total_scolaire <- sum(freq_scolaire$montees_tot, na.rm = TRUE)
-pct_scolaire   <- round(total_scolaire / total_montees * 100, 3)
+cat("\n=== FRÉQUENTATION DES LIGNES SCOLAIRES (12 derniers mois) ===\n")
+print(as.data.frame(freq %>% mutate(montees = round(montees))))
+cat("\nPart des lignes scolaires dans les montées du réseau :", part, "%\n")
+cat("Ces lignes ne circulent que les jours d'école et visent un public\n")
+cat("précis : leur volume ne se compare pas à celui des lignes régulières.\n")
 
-cat("Total montées réseau (déf.) :",
-    format(round(total_montees), big.mark = " "), "\n")
-cat("Montées lignes SCOLAIRE     :",
-    format(round(total_scolaire), big.mark = " "), "\n")
-cat("Part SCOLAIRE / réseau      :", pct_scolaire, "%\n\n")
+# ── 5. NIVEAU SOCIO-ÉCONOMIQUE ──────────────────────────────
+# Les couches OCS_POPBATLOG décrivent le bâti et la population
+# résidante (âge, sexe, nationalité), pas le revenu. La nationalité
+# n'est pas un indicateur de revenu et n'est pas utilisée comme tel.
+# Aucune conclusion socio-économique n'est donc tirée ici. Un
+# croisement avec une statistique communale du revenu (par exemple
+# celle de l'administration fiscale ou de l'OFS, à identifier et
+# vérifier) serait nécessaire.
 
-# [TPG] Volume faible mais fonction sociale — ces lignes opèrent uniquement
-# [TPG] les jours scolaires. Leur utilité se mesure en service rendu, pas en montées totales.
-cat("# [TPG] Part SCOLAIRE =", pct_scolaire,
-    "% — volume faible ; jours scolaires uniquement.\n")
-cat("# [TPG] Communes non desservies (",
-    nrow(communes_non_desservies),
-    ") = zones potentielles d'extension ou réorientation des tracés.\n\n",
-    sep = "")
+cat("\n=== NIVEAU SOCIO-ÉCONOMIQUE ===\n")
+cat("Colonnes disponibles dans la couche communes :\n")
+cat(paste(setdiff(names(communes), "geometry"), collapse = ", "), "\n")
+cat("Aucune ne mesure le revenu. Pas d'analyse socio-économique possible\n")
+cat("avec ces données ; voir la note en tête de section.\n")
 
-cat("--- OBS-086 — Meyrin : non desservie C1-C9 mais sur-fréquentée ---\n")
-cat("Meyrin figure parmi les communes sans arrêt scolaire (C1-C9) mais est\n")
-cat("structurellement sur-fréquentée en transports publics généraux (T-012).\n")
-cat("Hypothèse : les élèves de Meyrin utilisent les lignes PRINCIPAL/SECONDAIRE\n")
-cat("régulières — la densité du réseau général est suffisante pour ne pas\n")
-cat("nécessiter de ligne dédiée. Ce profil distingue Meyrin des communes\n")
-cat("réellement mal desservies (Troinex, Genthod).\n")
-# [TPG] Signal opérationnel : l'absence de ligne scolaire à Meyrin n'est pas
-# [TPG] un manque — c'est un choix cohérent avec la densité du réseau général.
-# [TPG] Toutes les communes non desservies C1-C9 ne sont pas équivalentes.
-cat("\n")
+# ── 6. FIGURES ──────────────────────────────────────────────
+# Carte : communes_carte_terre (lac retire, voir section 1). Nuage
+# de points : par_commune, indicateurs non affectes par le decoupage.
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. VISUALISATIONS
-# ─────────────────────────────────────────────────────────────────────────────
+carte <- communes_carte_terre %>% left_join(par_commune %>% select(COMMUNE, arrets_scolaires), by = "COMMUNE")
 
-cat("=== 7. Visualisations ===\n\n")
+p_carte <- ggplot() +
+  geom_sf(data = carte, aes(fill = arrets_scolaires), color = "white", linewidth = 0.2) +
+  geom_sf(data = arrets_sco, color = COL_REF, size = 0.4, alpha = 0.6) +
+  scale_fill_gradient(low = "#F2F2F2", high = ROUGE_PRINCIPAL, name = "Arrêts\nscolaires") +
+  labs(title = "Arrêts des lignes scolaires par commune",
+       subtitle = paste0("Lignes ", paste(sort(unique(scolaire$ligne)), collapse = ", "),
+                         ", ", format(DEBUT_FENETRE, "%m.%Y"), " à ",
+                         format(DATE_COUPURE, "%m.%Y"), ". Points : arrêts."),
+       caption = paste(SOURCE_TPG, SOURCE_SITG,
+                       paste0("Population au ", DATE_REF_SITG, "."),
+                       sep = "\n")) +
+  theme_projet() +
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(),
+        axis.ticks = element_blank(), axis.title = element_blank(),
+        panel.grid = element_blank())
 
-# Couche communes enrichie (pour VIZ1 et VIZ2)
-communes_viz <- communes_wgs84 %>%
-  dplyr::select(commune = all_of(nom_col), geometry) %>%
-  left_join(arrets_par_commune_sco, by = "commune") %>%
-  mutate(
-    n_arrets_scolaires = replace_na(n_arrets_scolaires, 0),
-    couverte           = n_arrets_scolaires > 0
-  )
+print(p_carte)
+ggsave(file.path(DIR_FIG, "15_carte_scolaire.png"), p_carte, width = 10, height = 8, dpi = 150)
 
-# ── VIZ1 — Carte choroplèthe couverture scolaire par commune ─────────────────
-# NOTE VIZ : candidat Python/Leaflet pour version interactive (carte web)
+p_nuage <- ggplot(par_commune, aes(x = AGE_0_19, y = arrets_scolaires)) +
+  geom_point(color = ROUGE_PRINCIPAL, size = 2.5, alpha = 0.8) +
+  scale_x_log10(labels = label_number(big.mark = " ")) +
+  labs(title = "Arrêts scolaires et population de 0 à 19 ans, par commune",
+       subtitle = paste0("Une commune par point. Spearman rho = ", r_jeunes$rho,
+                         ", IC 95% [", r_jeunes$inf, " ; ", r_jeunes$sup, "].\n",
+                         n_zero, " communes sans arrêt scolaire, sur l'axe du bas."),
+       x = "Habitants de 0 à 19 ans (échelle logarithmique)",
+       y = "Arrêts des lignes scolaires",
+       caption = paste(SOURCE_TPG, SOURCE_SITG,
+                       paste0("Population au ", DATE_REF_SITG, "."),
+                       sep = "\n")) +
+  theme_projet()
 
-p_viz1 <- ggplot() +
-  geom_sf(data = communes_viz,
-          aes(fill = n_arrets_scolaires),
-          color = "white", linewidth = 0.5) +
-  geom_sf(data  = arrets_scolaires_sf,
-          color = PALETTE_TYPES["SCOLAIRE"],
-          size  = 0.9, alpha = 0.5) +
-  scale_fill_gradient(
-    low  = "#F5F5F5",
-    high = PALETTE_TYPES["SCOLAIRE"],
-    name = "Arrêts\nscolaires"
-  ) +
-  labs(
-    title    = "Couverture des lignes scolaires C1-C9 par commune",
-    subtitle = paste0(n_communes_scolaires, " / ", n_communes_total,
-                      " communes desservies (",
-                      round(n_communes_scolaires / n_communes_total * 100, 1), "%)"),
-    caption  = "Source : TPG Open Data + SITG OCS_POPBATLOG_COMMUNE | Auteur : Frat DAG"
-  ) +
-  theme_tpg() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks  = element_blank(),
-    panel.grid  = element_blank()
-  )
+print(p_nuage)
+ggsave(file.path(DIR_FIG, "15_scolaire_population.png"), p_nuage, width = 10, height = 7, dpi = 150)
+message("Figures enregistrées.")
 
-ggsave(here::here("figures/15_couverture_scolaire_communes.png"),
-       plot = p_viz1, width = 10, height = 8, dpi = 150)
-cat("VIZ1 sauvegardé : figures/15_couverture_scolaire_communes.png\n")
+# ── 7. SAUVEGARDE ───────────────────────────────────────────
 
-# ── VIZ2 — Barplot communes × arrêts scolaires ───────────────────────────────
-# NOTE VIZ : candidat Power BI pour tableau de bord opérationnel
+write.csv(par_commune, file.path(DIR_RES, paste0("15_scolaire_communes_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(freq,        file.path(DIR_RES, paste0("15_scolaire_lignes_",   SNAPSHOT_ID, ".csv")), row.names = FALSE)
 
-communes_bar <- communes_viz %>%
-  st_drop_geometry() %>%
-  arrange(n_arrets_scolaires) %>%
-  mutate(commune = factor(commune, levels = commune))
-
-p_viz2 <- ggplot(communes_bar,
-                 aes(x = commune,
-                     y = n_arrets_scolaires,
-                     fill = couverte)) +
-  geom_col() +
-  coord_flip() +
-  scale_fill_manual(
-    values = c("FALSE" = "#DDDDDD", "TRUE" = PALETTE_TYPES["SCOLAIRE"]),
-    labels = c("FALSE" = "Non desservie (0 arrêt)", "TRUE" = "Desservie"),
-    name   = NULL
-  ) +
-  scale_y_continuous(breaks = seq(0, 20, 2)) +
-  labs(
-    title    = "Arrêts scolaires par commune — lignes C1-C9",
-    subtitle = paste0(n_communes_total - n_communes_scolaires,
-                      " communes sans arrêt scolaire sur ",
-                      n_communes_total),
-    x        = NULL,
-    y        = "Nombre d'arrêts scolaires",
-    caption  = "Source : TPG Open Data + SITG | Auteur : Frat DAG"
-  ) +
-  theme_tpg() +
-  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
-
-ggsave(here::here("figures/15_arrets_scolaires_par_commune.png"),
-       plot = p_viz2, width = 10, height = 9, dpi = 150)
-cat("VIZ2 sauvegardé : figures/15_arrets_scolaires_par_commune.png\n")
-
-# ── VIZ3 — Scatter population × arrêts scolaires (si population disponible) ──
-# NOTE VIZ : candidat Python/seaborn avec annotations interactives
-
-if (!is.na(pop_col) && !is.null(df_t015a)) {
-
-  p_viz3 <- ggplot(df_t015a,
-                   aes(x = population, y = n_arrets_scolaires)) +
-    geom_point(color = PALETTE_TYPES["SCOLAIRE"], size = 3, alpha = 0.85) +
-    geom_smooth(method   = "lm", se       = TRUE,
-                color    = COL_NEUTRE,    fill     = "#DDDDDD",
-                linetype = "dashed", linewidth = 0.8) +
-    geom_text(
-      data = df_t015a %>%
-        filter(n_arrets_scolaires > quantile(n_arrets_scolaires, 0.75) |
-               population > quantile(population, 0.75)),
-      aes(label = commune),
-      size = 2.7, hjust = -0.1, color = COL_REF, check_overlap = TRUE
-    ) +
-    scale_x_continuous(labels = scales::comma) +
-    labs(
-      title    = "Population × arrêts scolaires par commune",
-      subtitle = paste0(
-        "Spearman rho=", round(sp_t015a$estimate, 3),
-        " | p=", format(sp_t015a$p.value, scientific = TRUE),
-        " | n=", n_t015a, " communes"
-      ),
-      x       = "Population (SITG OCS_POPBATLOG, déc. 2025)",
-      y       = "Nombre d'arrêts scolaires",
-      caption = "Source : TPG Open Data + SITG | Auteur : Frat DAG"
-    ) +
-    theme_tpg() +
-    theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
-
-  ggsave(here::here("figures/15_population_vs_arrets_scolaires.png"),
-         plot = p_viz3, width = 10, height = 7, dpi = 150)
-  cat("VIZ3 sauvegardé : figures/15_population_vs_arrets_scolaires.png\n")
-
-}
-
-cat("\n")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. BILAN SCRIPT 15
-# ─────────────────────────────────────────────────────────────────────────────
-
-cat("╔══════════════════════════════════════════════════════════════╗\n")
-cat("║  BILAN SCRIPT 15                                             ║\n")
-cat("╚══════════════════════════════════════════════════════════════╝\n\n")
-
-cat("EXT-006 — Couverture lignes scolaires C1-C9 :\n")
-cat("  Lignes présentes              :", n_distinct(scolaire_arrets$ligne), "\n")
-cat("  Arrêts géolocalisés           :", n_sco_geolocal, "/", n_sco_total, "\n")
-cat("  Communes desservies           :", n_communes_scolaires, "/", n_communes_total,
-    "(", round(n_communes_scolaires / n_communes_total * 100, 1), "%)\n")
-
-if (!is.na(pop_col) && !is.null(sp_t015a)) {
-  cat("  T-015a Spearman rho =", round(sp_t015a$estimate, 3),
-      "| p =", format(sp_t015a$p.value, scientific = TRUE),
-      "| n =", n_t015a, "\n")
-} else {
-  cat("  T-015a : population non disponible — non réalisé\n")
-}
-
-cat("\nEXT-008 — Niveau socio-économique :\n")
-if (has_socioeco) {
-  cat("  Données socio-éco présentes dans SITG\n")
-} else {
-  cat("  LIMITE : revenus/CSP absents SITG — analyse qualitative via T-012\n")
-  cat("  Source requise : OFS Statistique fiscale communale\n")
-}
-
-cat("\nOBS-022 — Part scolaire réseau :", pct_scolaire, "%\n")
-
-n_viz_saved <- ifelse(!is.na(pop_col) && !is.null(df_t015a), 3, 2)
-cat(n_viz_saved, "graphiques sauvegardés dans figures/\n\n")
+message("Script 15 terminé. Figures dans figures/, résultats dans resultats/.")

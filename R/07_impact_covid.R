@@ -1,386 +1,521 @@
 # ============================================================
-# SCRIPT 07 — IMPACT COVID ET RUPTURES STRUCTURELLES
-# Projet : TPG Open Data Analysis
+# SCRIPT 07 - IMPACT COVID ET RUPTURES STRUCTURELLES
 # Auteur : Frat DAG
-# Date   : avril 2026
+# Corrections : R-01, R-02, R-05, R-07, R-08, R-09, T-06,
+#               S-01, S-02, S-03, S-04, S-05, S-06, S-10, S-32
 # ------------------------------------------------------------
-# OBJECTIF : Tester formellement l'impact du COVID sur la
-# fréquentation TPG et analyser la récupération post-COVID.
-# Tests à intégrer :
-#   T-002 : NORMAL vs VACANCES (Mann-Whitney)
-#   T-004 : Ruptures structurelles série brute (Chow+CUSUM+BP)
-#   T-004b: Ruptures sur résidus STL
-#   T-006 : Pré-COVID vs post-COVID (Mann-Whitney)
+# TESTS :
+#   T-002  : jours NORMAL contre jours VACANCES
+#   T-004  : ruptures structurelles, série observée
+#   T-004b : ruptures sur série désaisonnalisée (voir S-02)
+#   T-006  : niveau pré-COVID contre niveau du dernier segment
+#            (régression, erreur type HAC, voir S-32)
+#
+# AVERTISSEMENT TRANSVERSAL (S-10) : la série mensuelle est
+# fortement autocorrélée. Les tests employés ici (Mann-Whitney,
+# Chow, CUSUM) supposent des observations indépendantes. Leurs
+# p-values sont donc trop optimistes. Le script calcule la taille
+# d'échantillon effective et publie les tailles d'effet et les
+# intervalles de confiance plutôt que les p-values seules.
+# T-006 utilise une erreur type de Newey-West (HAC), qui tient
+# compte de l'autocorrélation.
 # ============================================================
 
-# ── 1. NETTOYAGE ET PACKAGES ─────────────────────────────────
-
-rm(list = ls())
-gc()
-
-# Définir le répertoire de travail — adapter selon votre environnement
-# setwd("chemin/vers/tpg-opendata-analysis/R")
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(scales)
-library(strucchange)  # Chow, CUSUM, Bai-Perron
+library(strucchange)
+library(sandwich)
 
-# ── 2. CHARGEMENT ───────────────────────────────────────────
+# ── 1. CHARGEMENT ───────────────────────────────────────────
 
-# Données mensuelles agrégées
-mensuel <- readRDS("../data/raw/mensuel.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
-  filter(!is.na(ligne)) %>%
-  mutate(date = ym(mois), ligne = as.character(ligne))
+composantes <- readRDS(file.path(DIR_PROC, "stl_composantes.rds"))
 
-mensuel_global <- mensuel %>%
-  group_by(date) %>%
-  summarise(montees_totales = sum(nb_de_montees, na.rm = TRUE),
-            .groups = "drop") %>%
-  arrange(date)
-
-# Résidus STL produits en script 06
-composantes <- readRDS("../data/processed/stl_composantes.rds")
-
-# Données horaires pour T-002
-horaire <- readRDS("../data/raw/horaire.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
-  filter(!is.na(horaire_tranche_stop_theo)) %>%
+horaire <- lire("horaire") %>%
+  filter(horaire_tranche_stop_theo != "-") %>%
   mutate(heure = as.integer(horaire_tranche_stop_theo)) %>%
   filter(!is.na(heure))
 
-cat("Mensuel global  :", nrow(mensuel_global), "mois\n")
-cat("Composantes STL :", nrow(composantes), "mois\n")
-cat("Horaire         :", nrow(horaire), "obs.\n")
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Composantes STL :", nrow(composantes), "mois, de",
+    format(min(composantes$date)), "à", format(max(composantes$date)), "\n")
+cat("Horaire         :", nrow(horaire), "observations\n")
 
+# ── 2. AUTOCORRÉLATION ET TAILLE EFFECTIVE (S-10) ───────────
+# Avec une autocorrélation r au premier retard, le nombre
+# d'observations réellement indépendantes vaut approximativement
+# n * (1 - r) / (1 + r). Ce chiffre conditionne la lecture de
+# toutes les p-values du script.
 
-# ── 3. TEST T-002 — NORMAL VS VACANCES ──────────────────────
-# Hypothèse : fréquentation NORMAL > fréquentation VACANCES
-# Test : Mann-Whitney (deux groupes indépendants, normalité violée)
-# Agrégation par date d'abord — une observation par jour
-# Raison : éviter pseudoréplication (tranches horaires non indépendantes)
+acf_serie <- acf(composantes$desaisonnalisee, plot = FALSE, lag.max = 3)
+r1 <- as.numeric(acf_serie$acf[2])
+n_obs <- nrow(composantes)
+n_eff <- round(n_obs * (1 - r1) / (1 + r1), 1)
+
+cat("\n=== AUTOCORRÉLATION DE LA SÉRIE (S-10) ===\n")
+cat("ACF aux retards 1 à 3 :", round(as.numeric(acf_serie$acf[2:4]), 3), "\n")
+cat("Observations          :", n_obs, "\n")
+cat("Observations effectives (approx.) :", n_eff, "\n")
+cat("Les p-values ci-dessous sont calculées comme si les", n_obs,
+    "mois\nétaient indépendants. Ils ne le sont pas. À lire comme",
+    "des indications,\npas comme des niveaux de preuve.\n")
+
+# ── 3. T-002 : JOURS NORMAL CONTRE JOURS VACANCES ───────────
+# Agrégation par date d'abord : les tranches horaires d'une même
+# journée ne sont pas indépendantes (pseudoreplication).
 
 jour_data <- horaire %>%
   filter(horaire_type %in% c("NORMAL", "VACANCES")) %>%
   group_by(date, horaire_type) %>%
-  summarise(
-    montees_jour = sum(nb_de_montees, na.rm = TRUE),
-    .groups      = "drop"
-  )
+  summarise(montees_jour = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
 
-# Statistiques descriptives
-cat("=== STATISTIQUES DESCRIPTIVES T-002 ===\n\n")
-jour_data %>%
+resume_t002 <- jour_data %>%
   group_by(horaire_type) %>%
-  summarise(
-    n        = n(),
-    moyenne  = round(mean(montees_jour)),
-    mediane  = round(median(montees_jour)),
-    ecart_type = round(sd(montees_jour))
-  ) %>%
-  print()
+  summarise(n = n(),
+            mediane = round(median(montees_jour)),
+            moyenne = round(mean(montees_jour)),
+            ecart_type = round(sd(montees_jour)), .groups = "drop")
 
-# Différence des médianes
+cat("\n=== T-002 : NORMAL CONTRE VACANCES ===\n")
+print(as.data.frame(resume_t002))
+
 med_normal   <- median(jour_data$montees_jour[jour_data$horaire_type == "NORMAL"])
 med_vacances <- median(jour_data$montees_jour[jour_data$horaire_type == "VACANCES"])
-cat("\nDifférence médianes :", round((med_vacances - med_normal) / med_normal * 100, 1), "%\n")
+baisse_pct   <- round(100 * (med_vacances - med_normal) / med_normal, 1)
 
-# Vérification normalité
-cat("\nShapiro-Wilk par groupe :\n")
-for (g in c("NORMAL", "VACANCES")) {
-  vals <- jour_data$montees_jour[jour_data$horaire_type == g]
-  sw   <- shapiro.test(vals)
-  cat(sprintf("  %-10s W = %.3f  p = %s\n", g,
-              sw$statistic,
-              format(sw$p.value, scientific = TRUE, digits = 3)))
-}
-
-
-# ── 4. MANN-WHITNEY T-002 ───────────────────────────────────
-
-mw_res <- wilcox.test(
+mw_t002 <- wilcox.test(
   jour_data$montees_jour[jour_data$horaire_type == "NORMAL"],
   jour_data$montees_jour[jour_data$horaire_type == "VACANCES"],
-  alternative = "greater",  # H1 : NORMAL > VACANCES
-  conf.int    = TRUE,
-  conf.level  = 0.95
+  alternative = "greater", conf.int = TRUE, conf.level = 0.95
 )
 
-cat("=== RÉSULTATS T-002 ===\n\n")
-cat("W               :", mw_res$statistic, "\n")
-cat("p-value         :", format(mw_res$p.value, scientific = TRUE), "\n")
-cat("Hodges-Lehmann  :", round(mw_res$estimate), "montées\n")
-cat("IC 95% borne inf:", round(mw_res$conf.int[1]), "\n")
+n_t002 <- nrow(jour_data)
+r_t002 <- round(qnorm(mw_t002$p.value, lower.tail = FALSE) / sqrt(n_t002), 3)
 
-# Taille d'effet r
-n1 <- sum(jour_data$horaire_type == "NORMAL")
-n2 <- sum(jour_data$horaire_type == "VACANCES")
-Z  <- qnorm(mw_res$p.value, lower.tail = FALSE)
-r  <- Z / sqrt(n1 + n2)
-cat("Taille effet r  :", round(r, 3), "\n")
-cat("Magnitude       :", ifelse(r >= 0.5, "Grand (≥ 0.5)",
-                                ifelse(r >= 0.3, "Moyen", "Petit")), "\n")
+cat("\nBaisse médiane en vacances :", baisse_pct, "%\n")
+cat("Hodges-Lehmann :", round(mw_t002$estimate), "montées par jour",
+    "| IC 95% borne inf. :", round(mw_t002$conf.int[1]), "\n")
+cat("Taille d'effet r :", r_t002, "\n")
+cat("p-value :", format(mw_t002$p.value, scientific = TRUE, digits = 3),
+    "(autocorrélation non corrigée)\n")
 
-# Impact concret
-diff_mediane <- med_normal - med_vacances
-cat("\nImpact concret  :", round(diff_mediane), "montées/jour de moins\n")
-cat("Soit ~", round(diff_mediane / 600), "bus remplis retirés quotidiennement\n")
+# NOTE S-04 : la version d'avril convertissait cette différence en
+# "bus remplis retirés" via une division par 600. Ce chiffre n'a
+# aucune base : il ignore la répartition dans la journée, le taux
+# d'occupation réel et la capacité par type de véhicule. Supprimé.
 
-# ── 5. TEST T-004 — RUPTURES STRUCTURELLES SÉRIE BRUTE ──────
-# Quatre tests complémentaires — chacun répond à une question
-# différente (voir DOCUMENTATION_TECHNIQUE.md pour le détail)
-
-ts_mensuel <- ts(mensuel_global$montees_totales,
-                 start = c(2016, 1), frequency = 12)
-
-# Position COVID dans la série (mars 2020 = mois 39)
-pos_covid <- which(mensuel_global$date == as.Date("2020-03-01"))
-cat("Position COVID dans la série :", pos_covid, "sur",
-    length(ts_mensuel), "mois\n\n")
-
-# ── TEST DE CHOW ─────────────────────────────────────────────
-cat("--- TEST DE CHOW (mars 2020) ---\n")
-chow_res <- sctest(ts_mensuel ~ 1,
-                   type  = "Chow",
-                   point = pos_covid)
-cat("F   =", round(chow_res$statistic, 3), "\n")
-cat("p   =", format(chow_res$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(chow_res$p.value < 0.05,
-                "Rupture structurelle prouvée à mars 2020",
-                "Pas de rupture détectée"), "\n\n")
-
-# ── CUSUM ────────────────────────────────────────────────────
-cat("--- CUSUM (stabilité du niveau) ---\n")
-cusum_res <- efp(ts_mensuel ~ 1, type = "OLS-CUSUM")
-cusum_test <- sctest(cusum_res)
-cat("S   =", round(cusum_test$statistic, 3), "\n")
-cat("p   =", format(cusum_test$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(cusum_test$p.value < 0.05,
-                "Instabilité du niveau prouvée",
-                "Série stable"), "\n\n")
-
-# ── CUSUM² ───────────────────────────────────────────────────
-cat("--- CUSUM² (stabilité de la variance) ---\n")
-cusum2_res  <- efp(ts_mensuel ~ 1, type = "OLS-CUSUM")
-cusum2_test <- sctest(efp(ts_mensuel ~ 1, type = "RE"))
-cat("S   =", round(cusum2_test$statistic, 3), "\n")
-cat("p   =", format(cusum2_test$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(cusum2_test$p.value < 0.05,
-                "Instabilité de la variance prouvée",
-                "Variance stable"), "\n")
-
-# ── CUSUM² CORRIGÉ ───────────────────────────────────────────
-cat("--- CUSUM² (stabilité de la variance — type RE) ---\n")
-cusum2_test <- sctest(efp(ts_mensuel ~ 1, type = "RE"))
-cat("S   =", round(cusum2_test$statistic, 3), "\n")
-cat("p   =", format(cusum2_test$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(cusum2_test$p.value < 0.05,
-                "Instabilité de la variance prouvée",
-                "Variance stable"), "\n\n")
-
-# ── BAI-PERRON ───────────────────────────────────────────────
-cat("--- BAI-PERRON (nombre et dates des ruptures) ---\n")
-bp_test <- breakpoints(ts_mensuel ~ 1)
-
-# Extraction BIC
-bp_sum_obj  <- summary(bp_test)
-bic_tableau <- bp_sum_obj$RSS["BIC", ]
-n_opt       <- as.integer(names(which.min(bic_tableau)))
-
-cat("BIC par nombre de ruptures :\n")
-print(round(bic_tableau, 1))
-cat("\nNombre optimal de ruptures (BIC) :", n_opt, "\n")
-
-# Dates des ruptures optimales
-if (n_opt > 0) {
-  bp_opt        <- breakpoints(bp_test, breaks = n_opt)
-  dates_ruptures <- mensuel_global$date[bp_opt$breakpoints]
-  cat("Dates des ruptures :\n")
-  for (i in seq_along(dates_ruptures)) {
-    cat(" ", i, ":", format(dates_ruptures[i], "%B %Y"), "\n")
-  }
-}
-
-# ── 6. TEST T-004b — RUPTURES SUR RÉSIDUS STL ───────────────
-# On teste si les ruptures persistent après retrait de la
-# tendance et de la saisonnalité
-# Si oui → rupture permanente de niveau (mean shift)
-# Si non → choc transitoire absorbé par la tendance
-
-ts_residus <- ts(composantes$residus,
-                 start = c(2016, 1), frequency = 12)
-
-cat("--- RÉSIDUS STL : statistiques ---\n")
-cat("Moyenne    :", round(mean(composantes$residus) / 1e6, 4), "M\n")
-cat("Écart-type :", round(sd(composantes$residus) / 1e6, 3), "M\n\n")
-
-# Chow sur résidus
-cat("--- CHOW sur résidus STL (mars 2020) ---\n")
-chow_res2 <- sctest(ts_residus ~ 1,
-                    type  = "Chow",
-                    point = pos_covid)
-cat("F =", round(chow_res2$statistic, 3),
-    "  p =", format(chow_res2$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(chow_res2$p.value < 0.05,
-                "Rupture encore visible dans les résidus",
-                "Rupture absente des résidus — choc transitoire"), "\n\n")
-
-# CUSUM sur résidus
-cat("--- CUSUM sur résidus STL ---\n")
-cusum_res2  <- efp(ts_residus ~ 1, type = "OLS-CUSUM")
-cusum_test2 <- sctest(cusum_res2)
-cat("S =", round(cusum_test2$statistic, 3),
-    "  p =", format(cusum_test2$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(cusum_test2$p.value < 0.05,
-                "Instabilité encore présente",
-                "Série stable après STL"), "\n\n")
-
-# Bai-Perron sur résidus
-cat("--- BAI-PERRON sur résidus STL ---\n")
-bp_res      <- breakpoints(ts_residus ~ 1)
-bp_res_sum  <- summary(bp_res)
-bic_res     <- bp_res_sum$RSS["BIC", ]
-n_opt_res   <- as.integer(names(which.min(bic_res)))
-
-cat("BIC par nombre de ruptures :\n")
-print(round(bic_res, 1))
-cat("Nombre optimal :", n_opt_res, "\n")
-cat("→", ifelse(n_opt_res == 0,
-                "Aucune rupture dans les résidus — COVID = choc transitoire",
-                paste(n_opt_res, "rupture(s) encore présente(s) dans les résidus")), "\n")
-
-
-# Identifier les dates des 2 ruptures dans les résidus
-bp_res_opt    <- breakpoints(bp_res, breaks = 2)
-dates_res_rup <- mensuel_global$date[bp_res_opt$breakpoints]
-
-cat("Dates des 2 ruptures dans les résidus :\n")
-for (i in seq_along(dates_res_rup)) {
-  cat(" ", i, ":", format(dates_res_rup[i], "%B %Y"), "\n")
-}
-
-# Vérifier le BIC de près — est-ce que m=0 est proche de m=2 ?
-cat("\nDifférence BIC m=0 vs m=2 :",
-    round(bic_res["0"] - bic_res["2"], 1), "points\n")
-cat("(< 10 points = différence marginale)\n")
-
-# ── 7. BLOC DÉCISION — T-004 ET T-004b ──────────────────────
-
-# T-004 — SÉRIE BRUTE :
-# Chow F=7.003, p=0.009 → rupture prouvée à mars 2020
-# CUSUM S=1.990, p=7.26×10⁻⁴ → instabilité niveau prouvée
-# RE    S=1.990, p=7.26×10⁻⁴ → instabilité variance prouvée
-# Bai-Perron m=3 : fév 2020, août 2021, fév 2023
-
-# T-004b — RÉSIDUS STL :
-# Chow  F=1.96,  p=0.164 → rupture ABSENTE des résidus ✅
-# CUSUM S=1.094, p=0.183 → série stable après STL ✅
-# Bai-Perron m=2 : nov 2019, mai 2021
-#   → Nuance : écart BIC m=0 vs m=2 = 15.3 points
-#   → Ces "ruptures" correspondent aux limites du modèle STL
-#     avec s.window periodic sur une période incluant COVID
-#   → Interprétation : artefacts de modélisation, pas des
-#     ruptures structurelles réelles
-#
-# CONCLUSION COMMUNE T-004 + T-004b :
-# Le COVID est un choc transitoire absorbé par la tendance STL
-# Pas de rupture permanente de niveau — récupération complète
-# Cohérent avec T-006 (à venir) : pré vs post-COVID indistinguables
-#
-# LIMITE DOCUMENTÉE :
-# s.window = "periodic" impose une saisonnalité rigide — un STL
-# flexible pourrait mieux isoler les résidus en période COVID
-# Sensibilité à tester dans script 09 si temps disponible
-
-# ── 8. TEST T-006 — PRÉ-COVID VS POST-COVID ─────────────────
-# Hypothèse : la fréquentation post-COVID est-elle revenue
-# au niveau pré-COVID ?
-# Test : Mann-Whitney bilatéral (pas de direction a priori)
-# Périodes :
-#   Pré-COVID  : jan 2016 → fév 2020 (50 mois)
-#   Post-COVID : jan 2022 → fév 2026 (50 mois)
-#   Exclu      : mar 2020 → déc 2021 (régime COVID distinct)
-
-pre_covid  <- mensuel_global %>%
-  filter(date >= as.Date("2016-01-01") &
-           date <= as.Date("2020-02-01"))
-
-post_covid <- mensuel_global %>%
-  filter(date >= as.Date("2022-01-01") &
-           date <= as.Date("2026-02-01"))
-
-cat("=== STATISTIQUES T-006 ===\n\n")
-cat("Pré-COVID  : n =", nrow(pre_covid),
-    "| médiane =", round(median(pre_covid$montees_totales) / 1e6, 2), "M\n")
-cat("Post-COVID : n =", nrow(post_covid),
-    "| médiane =", round(median(post_covid$montees_totales) / 1e6, 2), "M\n")
-cat("Différence médianes :",
-    round((median(post_covid$montees_totales) -
-             median(pre_covid$montees_totales)) /
-            median(pre_covid$montees_totales) * 100, 2), "%\n\n")
-
-# Normalité
-cat("Shapiro-Wilk :\n")
-sw_pre  <- shapiro.test(pre_covid$montees_totales)
-sw_post <- shapiro.test(post_covid$montees_totales)
-cat("  Pré-COVID  W =", round(sw_pre$statistic, 3),
-    " p =", format(sw_pre$p.value, scientific = TRUE), "\n")
-cat("  Post-COVID W =", round(sw_post$statistic, 3),
-    " p =", format(sw_post$p.value, scientific = TRUE), "\n\n")
-
-# Mann-Whitney bilatéral
-mw_t006 <- wilcox.test(
-  pre_covid$montees_totales,
-  post_covid$montees_totales,
-  alternative = "two.sided",
-  conf.int    = TRUE,
-  conf.level  = 0.95
+enregistrer(
+  test_id = "T-002", script = "07_impact_covid.R",
+  methode = "Mann-Whitney unilatéral, montées quotidiennes NORMAL contre VACANCES",
+  n = n_t002, statistique = as.numeric(mw_t002$statistic), p_value = NA,
+  effet_nom = "Hodges-Lehmann (montées/jour)",
+  effet = round(mw_t002$estimate),
+  ic_inf = round(mw_t002$conf.int[1]), ic_sup = NA,
+  note = paste0("Baisse médiane ", baisse_pct, " %. r = ", r_t002,
+                ". p-value exclue (S-10).")
 )
 
-cat("=== RÉSULTATS T-006 ===\n\n")
-cat("W               :", mw_t006$statistic, "\n")
-cat("p-value         :", format(mw_t006$p.value, scientific = TRUE), "\n")
-cat("Hodges-Lehmann  :", round(mw_t006$estimate / 1e6, 3), "M\n")
-cat("IC 95%          : [",
-    round(mw_t006$conf.int[1] / 1e6, 3), ";",
-    round(mw_t006$conf.int[2] / 1e6, 3), "] M\n")
+# ── 4. T-004 : RUPTURES SUR LA SÉRIE OBSERVÉE ───────────────
+# Vérification de continuité avant ts() (S-06).
 
-# Taille d'effet
-n_pre  <- nrow(pre_covid)
-n_post <- nrow(post_covid)
-Z_t006 <- qnorm(mw_t006$p.value / 2, lower.tail = FALSE)
-r_t006 <- Z_t006 / sqrt(n_pre + n_post)
-cat("Taille effet r  :", round(r_t006, 3), "\n")
-cat("→", ifelse(mw_t006$p.value > 0.05,
-                "NON-REJET H0 — récupération statistiquement complète",
-                "Rejet H0 — différence significative pré vs post"), "\n")
+mois_attendus <- seq(min(composantes$date), max(composantes$date), by = "month")
+if (any(!mois_attendus %in% composantes$date))
+  stop("Série discontinue : ts() attribuerait de fausses dates.")
 
+ts_obs <- ts(composantes$observee,
+             start = c(year(min(composantes$date)),
+                       month(min(composantes$date))), frequency = 12)
+pos_covid <- which(composantes$date == D_COVID)
 
-# ── 9. BLOC DÉCISION FINAL — T-006 ──────────────────────────
+cat("\n=== T-004 : RUPTURES, SÉRIE OBSERVÉE ===\n")
+cat("Position de mars 2020 dans la série :", pos_covid, "sur", n_obs, "\n")
 
-# RÉSULTATS T-006 :
-# p = 0.506 → NON-REJET H0
-# r = 0.067 → effet négligeable
-# IC 95% [-0.864 ; +0.434] M → contient zéro, direction non prouvée
+# Test de Chow à une date PRÉ-SPÉCIFIÉE.
+# Cette date vient du calendrier (début de la pandémie), pas des
+# données. Le test est donc légitime. À ne pas confondre avec un
+# Chow appliqué à une date trouvée par Bai-Perron, qui utiliserait
+# deux fois les mêmes données (voir S-08, script 14).
+chow_t004 <- sctest(ts_obs ~ 1, type = "Chow", point = pos_covid)
+cat("\nChow à mars 2020 (date pré-spécifiée, calendaire) :\n")
+cat("  F =", round(chow_t004$statistic, 3),
+    "| p =", format(chow_t004$p.value, scientific = TRUE, digits = 3), "\n")
+
+# NOTE S-05 : ce F se rapporte à MARS 2020 et à rien d'autre.
+# Le README d'avril l'attribuait à juin 2021, date issue de
+# Bai-Perron. Les deux résultats sont distincts et ne doivent pas
+# être mélangés.
+
+cusum_t004 <- sctest(efp(ts_obs ~ 1, type = "OLS-CUSUM"))
+cat("\nOLS-CUSUM (stabilité du niveau) :\n")
+cat("  S =", round(cusum_t004$statistic, 3),
+    "| p =", format(cusum_t004$p.value, scientific = TRUE, digits = 3), "\n")
+
+# ── 5. S-01 : LE PRÉTENDU CUSUM CARRÉ ───────────────────────
+# La version d'avril présentait efp(type = "RE") comme un
+# "CUSUM carré" testant la stabilité de la VARIANCE. C'est faux :
+# le test RE suit les estimations récursives des COEFFICIENTS,
+# donc ici la moyenne. Sur un modèle à simple constante, il
+# renvoie d'ailleurs la même valeur que le CUSUM. On le vérifie
+# plutôt que de l'affirmer.
+
+re_t004 <- sctest(efp(ts_obs ~ 1, type = "RE"))
+cat("\n=== S-01 : VÉRIFICATION DU PRÉTENDU CUSUM CARRÉ ===\n")
+cat("efp type OLS-CUSUM : S =", round(cusum_t004$statistic, 3), "\n")
+cat("efp type RE        : S =", round(re_t004$statistic, 3), "\n")
+cat("Statistiques identiques :",
+    isTRUE(all.equal(as.numeric(cusum_t004$statistic),
+                     as.numeric(re_t004$statistic))), "\n")
+cat("Le test RE ne teste pas la variance. L'affirmation",
+    "d'avril est retirée.\n")
+
+# Vrai test de stabilité de la variance : Fligner-Killeen entre
+# la période d'avant et la période actuelle, sur la série
+# désaisonnalisée. Robuste à la non-normalité.
+DEBUT_POST <- as.Date("2022-01-01")
+
+var_data <- composantes %>%
+  mutate(periode = case_when(
+    date <  D_COVID    ~ "Avant 2020",
+    date >= DEBUT_POST ~ "Depuis 2022",
+    TRUE               ~ NA_character_)) %>%
+  filter(!is.na(periode))
+
+fk <- fligner.test(desaisonnalisee ~ factor(periode), data = var_data)
+sd_pre  <- sd(var_data$desaisonnalisee[var_data$periode == "Avant 2020"])
+sd_post <- sd(var_data$desaisonnalisee[var_data$periode == "Depuis 2022"])
+
+cat("\nVrai test de variance (Fligner-Killeen, série désaisonnalisée) :\n")
+cat("  Écart-type avant 2020 :", round(sd_pre  / 1e6, 3), "M\n")
+cat("  Écart-type depuis 2022:", round(sd_post / 1e6, 3), "M",
+    "| rapport :", round(sd_post / sd_pre, 2), "\n")
+cat("  chi2 =", round(fk$statistic, 3),
+    "| p =", format(fk$p.value, digits = 3), "\n")
+if (fk$p.value < 0.05) {
+  cat("  Conclusion : variance instable entre les deux périodes.\n")
+} else {
+  cat("  Conclusion : pas de preuve de changement de variance, malgré des\n")
+  cat("  écarts-types assez différents. Avec environ", n_eff, "observations\n")
+  cat("  effectives (S-10), ce test a peu de puissance : l'absence de preuve\n")
+  cat("  n'est pas une preuve d'absence.\n")
+}
+
+# ── 6. BAI-PERRON SUR LA SÉRIE OBSERVÉE ─────────────────────
+# Le nombre de ruptures est choisi par le BIC, sans imposition.
+
+bp_obs   <- breakpoints(ts_obs ~ 1)
+bic_obs  <- summary(bp_obs)$RSS["BIC", ]
+m_opt_obs <- as.integer(names(which.min(bic_obs)))
+
+cat("\nBai-Perron, série observée :\n")
+cat("  BIC :", paste(names(bic_obs), round(bic_obs, 1),
+                     sep = " = ", collapse = " | "), "\n")
+cat("  Nombre de ruptures retenu par le BIC :", m_opt_obs, "\n")
+if (m_opt_obs > 0) {
+  dates_obs <- composantes$date[breakpoints(bp_obs, breaks = m_opt_obs)$breakpoints]
+  cat("  Dates :", paste(format(dates_obs, "%B %Y"), collapse = " | "), "\n")
+}
+
+# ── 7. T-004b : RUPTURES SUR LA SÉRIE DÉSAISONNALISÉE ───────
+# S-02 : la version d'avril testait les RÉSIDUS STL. Or les
+# résidus valent observée moins tendance moins saisonnalité, et
+# la tendance STL suit les changements de niveau. Chercher une
+# rupture de niveau dans les résidus revient à chercher ce qu'on
+# vient de retirer. On teste ici la série désaisonnalisée, qui
+# conserve la tendance et les changements de niveau.
+# Le script compare explicitement les deux pour que l'écart soit
+# visible et documenté.
+
+ts_des <- ts(composantes$desaisonnalisee,
+             start = c(year(min(composantes$date)),
+                       month(min(composantes$date))), frequency = 12)
+ts_rem <- ts(composantes$residus,
+             start = c(year(min(composantes$date)),
+                       month(min(composantes$date))), frequency = 12)
+
+analyse_bp <- function(serie, etiquette) {
+  bp  <- breakpoints(serie ~ 1)
+  bic <- summary(bp)$RSS["BIC", ]
+  m   <- as.integer(names(which.min(bic)))
+  dates <- if (m > 0) composantes$date[breakpoints(bp, breaks = m)$breakpoints] else as.Date(character(0))
+  cat("\n", etiquette, "\n", sep = "")
+  cat("  BIC :", paste(names(bic), round(bic, 1), sep = " = ", collapse = " | "), "\n")
+  cat("  Ruptures retenues par le BIC :", m, "\n")
+  if (m > 0) cat("  Dates :", paste(format(dates, "%B %Y"), collapse = " | "), "\n")
+  cat("  Gain de BIC entre m = 0 et l'optimum :",
+      round(bic["0"] - min(bic), 1), "points\n")
+  list(m = m, dates = dates, bic = bic)
+}
+
+cat("\n=== T-004b : COMPARAISON DES DEUX SÉRIES (S-02) ===\n")
+bp_rem <- analyse_bp(ts_rem, "Résidus STL (méthode d'avril, à ne pas utiliser)")
+bp_des <- analyse_bp(ts_des, "Série désaisonnalisée (méthode retenue)")
+
+cat("\nLecture : sur la série désaisonnalisée le gain de BIC est",
+    "de", round(bp_des$bic["0"] - min(bp_des$bic), 1), "points,",
+    "\ncontre", round(bp_rem$bic["0"] - min(bp_rem$bic), 1),
+    "points sur les résidus. Les ruptures détectées sur les résidus",
+    "\nsont faibles et ne correspondent pas aux événements connus.\n")
+cat("Les dates affichées sont le DERNIER mois de chaque segment",
+    "(convention de\nbreakpoints()). Le segment suivant commence le mois",
+    "d'après.\n")
+
+# NOTE : le script d'avril annonçait un seuil ("moins de 10 points
+# de BIC = différence marginale"), obtenait un écart supérieur à ce
+# seuil, et concluait quand même au caractère marginal. Le seuil
+# est ici appliqué tel qu'annoncé, sans exception.
+
+enregistrer(
+  test_id = "T-004b", script = "07_impact_covid.R",
+  methode = "Bai-Perron sur série désaisonnalisée, nombre de ruptures choisi par BIC",
+  n = n_obs, statistique = NA, p_value = NA,
+  effet_nom = "nombre de ruptures", effet = bp_des$m,
+  note = paste0("Dates (dernier mois de chaque segment) : ",
+                paste(format(bp_des$dates, "%Y-%m"), collapse = ", "),
+                ". Gain BIC ", round(bp_des$bic["0"] - min(bp_des$bic), 1),
+                " points. Méthode d'avril (résidus STL) circulaire, voir S-02.")
+)
+
+# ── 8. T-006 : NIVEAU PRÉ-COVID CONTRE NIVEAU ACTUEL (S-32) ─
+# S-03 : un non-rejet n'est pas une preuve d'équivalence, et le
+# groupe "depuis 2022" agrégeait une remontée et un plateau. On
+# commence donc par la trajectoire annuelle, avant tout test.
 #
-# CE QU'ON PEUT AFFIRMER :
-# - Distributions pré et post-COVID statistiquement indistinguables
-# - Récupération complète — le niveau d'avant COVID est retrouvé
-# - Cohérent avec T-004b : COVID = choc transitoire absorbé
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - Que pré et post-COVID sont identiques — absence de preuve ≠ preuve d'absence
-# - Que la récupération est uniforme par type de ligne (SCOLAIRE à 72%)
-#
-# RÉCONCILIATION T-004, T-004b, T-006 :
-# T-004  : ruptures dans la série brute ✅
-# T-004b : ruptures portées par la tendance, pas par niveau résiduel ✅
-# T-006  : une fois COVID exclu, pré et post indistinguables ✅
-# → Histoire cohérente : choc transitoire, pas changement de régime
+# S-32 : la version du 19.09 comparait les deux périodes par
+# Mann-Whitney et TOST, comme si les mois étaient indépendants
+# (n effectif environ 10.7). Elle est remplacée par :
+#   - une période "après" égale au DERNIER segment Bai-Perron de
+#     la série désaisonnalisée (section 7), donc sans la remontée ;
+#   - une régression du log de la série désaisonnalisée sur une
+#     indicatrice de période : le coefficient donne l'écart en % ;
+#   - une erreur type de Newey-West (HAC), retard fixé à 12 mois
+#     AVANT de voir le résultat, qui tient compte de l'autocorrélation ;
+#   - deux périmètres : réseau complet (lecture principale : niveau
+#     atteint avec le réseau d'aujourd'hui) et quais desservis tous
+#     les mois des deux périodes (robustesse : géographie constante).
+#     Le périmètre par lignes est calculé et écarté (voir plus bas).
+
+annuel <- composantes %>%
+  mutate(annee = year(date)) %>%
+  group_by(annee) %>%
+  summarise(n_mois = n(),
+            mediane_M = round(median(observee) / 1e6, 2), .groups = "drop")
+
+ref_2019 <- annuel$mediane_M[annuel$annee == 2019]
+annuel <- annuel %>% mutate(pct_vs_2019 = round(100 * (mediane_M / ref_2019 - 1), 1))
+
+cat("\n=== T-006 : TRAJECTOIRE ANNUELLE (S-03) ===\n")
+print(as.data.frame(annuel))
+cat("\nLes années depuis 2022 vont de ",
+    min(annuel$pct_vs_2019[annuel$annee >= 2022]), " % à ",
+    max(annuel$pct_vs_2019[annuel$annee >= 2022]),
+    " % du niveau 2019.\nLes résumer par un seul groupe masquerait cette progression.\n", sep = "")
+
+# 8a. Périodes
+if (bp_des$m == 0) stop("Aucune rupture retenue : le dernier segment n'est pas défini.")
+DEBUT_SEGMENT <- max(bp_des$dates) %m+% months(1)
+if (DEBUT_SEGMENT <= D_COVID)
+  stop("Le dernier segment commence avant mars 2020 : T-006 n'a pas de sens.")
+MOIS_AVANT <- seq(min(composantes$date), D_COVID %m-% months(1), by = "month")
+MOIS_APRES <- seq(DEBUT_SEGMENT, max(composantes$date), by = "month")
+LAG_HAC <- 12
+
+cat("\n=== T-006 : NIVEAUX COMPARÉS (S-32) ===\n")
+cat("Avant  :", format(min(MOIS_AVANT), "%m.%Y"), "à", format(max(MOIS_AVANT), "%m.%Y"),
+    "(", length(MOIS_AVANT), "mois )\n")
+cat("Après  :", format(min(MOIS_APRES), "%m.%Y"), "à", format(max(MOIS_APRES), "%m.%Y"),
+    "(", length(MOIS_APRES), "mois, dernier segment Bai-Perron )\n")
+cat("Exclus : pandémie et remontée,", n_obs - length(MOIS_AVANT) - length(MOIS_APRES), "mois\n")
+cat("Erreur type de Newey-West, retard", LAG_HAC, "mois, fixé à l'avance.\n")
+
+# 8b. Estimation, identique pour chaque périmètre
+desaisonnaliser <- function(serie_mensuelle) {
+  # mêmes réglages que le script 06
+  s <- stl(ts(serie_mensuelle$y,
+              start = c(year(min(serie_mensuelle$date)), month(min(serie_mensuelle$date))),
+              frequency = 12),
+           s.window = "periodic", t.window = 13, robust = TRUE)
+  serie_mensuelle$desaisonnalisee <- serie_mensuelle$y - as.numeric(s$time.series[, "seasonal"])
+  serie_mensuelle
+}
+
+ecart_hac <- function(serie, etiquette) {
+  d <- serie %>%
+    filter(date %in% c(MOIS_AVANT, MOIS_APRES)) %>%
+    mutate(apres = as.numeric(date %in% MOIS_APRES))
+  f <- lm(log(desaisonnalisee) ~ apres, data = d)
+  b <- coef(f)[["apres"]]
+  se_hac  <- sqrt(NeweyWest(f, lag = LAG_HAC, prewhite = FALSE)["apres", "apres"])
+  se_naif <- summary(f)$coefficients["apres", "Std. Error"]
+  z <- qnorm(0.975)
+  en_pct <- function(x) round(100 * (exp(x) - 1), 2)
+  res <- data.frame(perimetre = etiquette, n = nrow(d),
+                    ecart_pct = en_pct(b),
+                    ic_inf = en_pct(b - z * se_hac), ic_sup = en_pct(b + z * se_hac),
+                    ic_naif_inf = en_pct(b - z * se_naif), ic_naif_sup = en_pct(b + z * se_naif),
+                    t_hac = round(b / se_hac, 3),
+                    p_hac = signif(2 * pnorm(-abs(b / se_hac)), 3))
+  cat("\n", etiquette, "\n", sep = "")
+  cat("  Écart du dernier segment au niveau d'avant :", res$ecart_pct, "%\n")
+  cat("  IC 95 % HAC : [", res$ic_inf, ";", res$ic_sup, "] %",
+      "| IC si mois indépendants : [", res$ic_naif_inf, ";", res$ic_naif_sup, "] %\n")
+  cat("  t HAC =", res$t_hac, "| p HAC =", format(res$p_hac), "\n")
+  res
+}
+
+# Périmètre 1 : réseau complet (série du script 06)
+res_reseau <- ecart_hac(composantes, "Réseau complet (lecture principale)")
+
+# Périmètre 2 : quais desservis tous les mois des deux périodes
+mensuel <- lire("mensuel") %>%
+  filter(!is.na(ligne)) %>%
+  mutate(date = ym(mois)) %>%
+  filter(date <= DATE_COUPURE)
+
+par_quai <- mensuel %>%
+  group_by(arret_code_long, date) %>%
+  summarise(x = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+  filter(x > 0)
+
+quais_constants <- par_quai %>%
+  group_by(arret_code_long) %>%
+  summarise(n_avant = sum(date %in% MOIS_AVANT),
+            n_apres = sum(date %in% MOIS_APRES), .groups = "drop") %>%
+  filter(n_avant == length(MOIS_AVANT), n_apres == length(MOIS_APRES)) %>%
+  pull(arret_code_long)
+
+part_couverte <- function(tab, cle, gardes, mois) {
+  t <- tab %>% filter(date %in% mois)
+  round(100 * sum(t$x[t[[cle]] %in% gardes]) / sum(t$x), 1)
+}
+
+cat("\nPérimètre des quais constants :", length(quais_constants), "quais sur",
+    n_distinct(par_quai$arret_code_long), "\n")
+cat("  Part des montées couverte : avant", part_couverte(par_quai, "arret_code_long", quais_constants, MOIS_AVANT),
+    "% | après", part_couverte(par_quai, "arret_code_long", quais_constants, MOIS_APRES), "%\n")
+
+serie_quais <- par_quai %>%
+  filter(arret_code_long %in% quais_constants) %>%
+  group_by(date) %>%
+  summarise(y = sum(x), .groups = "drop") %>%
+  arrange(date)
+if (!identical(serie_quais$date, mois_attendus))
+  stop("Série des quais constants discontinue.")
+res_quais <- ecart_hac(desaisonnaliser(serie_quais), "Quais constants (robustesse)")
+
+# Périmètre 3 : lignes présentes tous les mois des deux périodes.
+# Calculé pour transparence et ÉCARTÉ : les lignes qui cessent
+# avant 2020 et celles qui apparaissent ensuite sont exclues, donc
+# les montées passées de l'une à l'autre sont perdues. L'écart
+# obtenu est tiré vers le bas par construction.
+par_ligne <- mensuel %>%
+  group_by(ligne, date) %>%
+  summarise(x = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+  filter(x > 0)
+vie_lignes <- par_ligne %>% group_by(ligne) %>%
+  summarise(debut = min(date), fin = max(date),
+            n_avant = sum(date %in% MOIS_AVANT),
+            n_apres = sum(date %in% MOIS_APRES), .groups = "drop")
+lignes_constantes <- vie_lignes$ligne[vie_lignes$n_avant == length(MOIS_AVANT) &
+                                        vie_lignes$n_apres == length(MOIS_APRES)]
+serie_lignes <- par_ligne %>%
+  filter(ligne %in% lignes_constantes) %>%
+  group_by(date) %>% summarise(y = sum(x), .groups = "drop") %>% arrange(date)
+
+cat("\nPérimètre des lignes constantes :", length(lignes_constantes), "lignes sur",
+    nrow(vie_lignes), "\n")
+cat("  Lignes sans service après", format(D_COVID %m-% months(1), "%m.%Y"), ":",
+    sum(vie_lignes$fin < D_COVID), "| lignes apparues après :",
+    sum(vie_lignes$debut >= D_COVID), "\n")
+cat("  Part des montées couverte : avant", part_couverte(par_ligne, "ligne", lignes_constantes, MOIS_AVANT),
+    "% | après", part_couverte(par_ligne, "ligne", lignes_constantes, MOIS_APRES), "%\n")
+res_lignes <- ecart_hac(desaisonnaliser(serie_lignes), "Lignes constantes (écarté, biais vers le bas)")
+
+# 8c. Lecture
+cat("\nFormulation retenue :\n")
+cat("  Sur le réseau complet, le niveau du dernier segment (depuis ",
+    format(DEBUT_SEGMENT, "%m.%Y"), ") est de\n  ", res_reseau$ecart_pct,
+    " % par rapport au niveau d'avant 2020, IC 95 % HAC [", res_reseau$ic_inf, " ; ",
+    res_reseau$ic_sup, "] %.\n", sep = "")
+if (res_reseau$ic_inf > 0) {
+  cat("  L'intervalle exclut zéro : le niveau d'avant la pandémie est dépassé.\n")
+} else if (res_reseau$ic_sup < 0) {
+  cat("  L'intervalle est entièrement négatif : le niveau d'avant n'est pas retrouvé.\n")
+} else {
+  cat("  L'intervalle contient zéro : l'écart n'est pas établi, dans un sens\n")
+  cat("  comme dans l'autre.\n")
+}
+cat("  À géographie constante (quais), l'écart vaut ", res_quais$ecart_pct,
+    " %, IC [", res_quais$ic_inf, " ; ", res_quais$ic_sup, "] %.\n", sep = "")
+cat("  La différence entre les deux lectures (",
+    round(res_reseau$ecart_pct - res_quais$ecart_pct, 1),
+    " points) donne l'ordre de grandeur\n  de ce qui tient aux quais nouveaux ou ",
+    "non desservis en continu.\n", sep = "")
+cat("  L'erreur type HAC suppose une autocorrélation qui s'éteint en", LAG_HAC,
+    "mois environ.\n  Avec des segments de niveau aussi persistants, l'intervalle",
+    "reste à lire\n  comme un ordre de grandeur.\n")
+
+enregistrer(
+  test_id = "T-006", script = "07_impact_covid.R",
+  methode = paste0("Régression log(série désaisonnalisée) ~ période, avant 2020 contre ",
+                   "dernier segment Bai-Perron, erreur type Newey-West (retard ", LAG_HAC, ")"),
+  n = res_reseau$n, statistique = res_reseau$t_hac, p_value = res_reseau$p_hac,
+  effet_nom = "Écart du dernier segment au niveau d'avant 2020 (%)",
+  effet = res_reseau$ecart_pct, ic_inf = res_reseau$ic_inf, ic_sup = res_reseau$ic_sup,
+  note = paste0("Réseau complet. Dernier segment depuis ", format(DEBUT_SEGMENT, "%Y-%m"),
+                ". Robustesse quais constants (", length(quais_constants), " quais) : ",
+                res_quais$ecart_pct, " % [", res_quais$ic_inf, " ; ", res_quais$ic_sup,
+                "]. Périmètre par lignes écarté (", res_lignes$ecart_pct,
+                " %, lignes supprimées et créées exclues). Remplace Mann-Whitney et TOST (S-32).")
+)
+
+# ── 9. FIGURE : SÉRIE DÉSAISONNALISÉE ET RUPTURES ───────────
+
+ruptures_df <- if (bp_des$m > 0) data.frame(date = bp_des$dates) else NULL
+
+p_ruptures <- ggplot(composantes, aes(x = date)) +
+  geom_line(aes(y = observee / 1e6), color = COL_NEUTRE,
+            linewidth = 0.4, alpha = 0.6) +
+  geom_line(aes(y = desaisonnalisee / 1e6), color = ROUGE_PRINCIPAL, linewidth = 0.9) +
+  geom_vline(xintercept = D_COVID, linetype = "dashed",
+             color = COL_COVID, linewidth = 0.5) +
+  geom_vline(xintercept = D_GRATUITE, linetype = "dashed",
+             color = COL_GRATUITE, linewidth = 0.5) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(labels = label_number(suffix = " M")) +
+  labs(
+    title    = "Ruptures structurelles de la fréquentation",
+    subtitle = paste0("Série désaisonnalisée (rouge) et série observée (gris). ",
+                      bp_des$m, " rupture(s) retenue(s) par le BIC,\n",
+                      "traits pleins. Traits pointillés : COVID et gratuité jeunes."),
+    x = NULL, y = "Millions de montées",
+    caption = SOURCE_TPG
+  ) +
+  theme_projet()
+
+if (!is.null(ruptures_df)) {
+  p_ruptures <- p_ruptures +
+    geom_vline(data = ruptures_df, aes(xintercept = date),
+               color = COL_REF, linewidth = 0.6)
+}
+
+print(p_ruptures)
+ggsave(file.path(DIR_FIG, "07_ruptures_structurelles.png"),
+       p_ruptures, width = 12, height = 6, dpi = 150)
+message("Figure enregistrée.")
 
 # ── 10. SAUVEGARDE ──────────────────────────────────────────
-message("Script 07 terminé.")
+
+write.csv(annuel, file.path(DIR_RES, paste0("07_trajectoire_annuelle_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(resume_t002, file.path(DIR_RES, paste0("07_T002_resume_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(data.frame(serie = c("residus", "desaisonnalisee"),
+                     m_optimal = c(bp_rem$m, bp_des$m),
+                     dates = c(paste(format(bp_rem$dates, "%Y-%m"), collapse = "; "),
+                               paste(format(bp_des$dates, "%Y-%m"), collapse = "; "))),
+          file.path(DIR_RES, paste0("07_ruptures_comparaison_", SNAPSHOT_ID, ".csv")),
+          row.names = FALSE)
+
+message("Script 07 terminé. Figures dans figures/, résultats dans resultats/.")

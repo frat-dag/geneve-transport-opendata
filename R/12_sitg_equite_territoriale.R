@@ -1,462 +1,452 @@
-# =============================================================================
-# SCRIPT 12 — ÉQUITÉ TERRITORIALE : SITG × DONNÉES TPG
-# Projet TPG Open Data — Phase 3
-# Frat DAG — avril 2026
-# =============================================================================
+# ============================================================
+# SCRIPT 12 - ÉQUITÉ TERRITORIALE (DONNÉES SITG)
+# Auteur : Frat DAG
+# Corrections : R-01, R-02, R-03, R-05, R-07, R-08, R-09, T-04,
+#               T-06, S-21, S-22, S-33
+# ------------------------------------------------------------
+# OBJECTIF : croiser les arrêts et la fréquentation tpg avec la
+# population des communes genevoises et des secteurs de la Ville
+# de Genève.
 #
-# APPROCHE : inductive — les données SITG guident les questions analytiques.
-# On ne pose pas les questions avant d'avoir vu les données.
+# S-22 : la version d'avril joignait les montées aux arrêts par le
+# NOM d'arrêt. Or 1989 arrêts actifs ne portent que 877 noms
+# distincts, et un même nom peut couvrir jusqu'à douze quais. La
+# jointure multipliait donc les montées d'un arrêt par le nombre
+# de ses quais dans la commune. La jointure se fait désormais par
+# le code d'arrêt, qui est unique.
 #
-# DOUBLE VERSION :
-#   - Résultats publics : insights factuels, narration positive
-#   - Observations sensibles marquées # [TPG] : version confidentielle uniquement
+# S-21 : les montées rapportées à la population résidente ne
+# mesurent pas l'usage des transports par les habitants. Une
+# montée à Cornavin est le fait de n'importe quel voyageur du
+# canton, pas d'un habitant de la Ville de Genève. Les communes
+# qui concentrent emplois, gares et commerces ressortent donc
+# très haut par construction. L'indicateur est conservé sous son
+# vrai nom, charge du réseau rapportée à la population, et
+# l'équité territoriale est mesurée par la couverture en arrêts,
+# qui ne souffre pas de ce biais.
 #
-# QUESTION PRINCIPALE :
-#   La fréquentation TPG est-elle corrélée à la densité de population ?
-#   Existe-t-il des communes structurellement sous-desservies ?
-#   Les anomalies (sur/sous-fréquentation) ont-elles une explication ?
+# S-33 : deux corrections.
+#   1. SURFACE. Le SHAPE_AREA des communes riveraines inclut leur
+#      part du lac (Hermance 4.91 km2 contre 1.44 km2 de terre).
+#      Les polygones sont désormais découpés par la couche SITG
+#      GEO_LAC (Léman, Rhône, Arve) et la surface est recalculée
+#      sur la terre. Les arrêts restent rattachés aux polygones
+#      administratifs complets (Bel-Air est sur le Rhône).
+#   2. MÉTHODE. La corrélation de Spearman entre densité et arrêts
+#      pour mille habitants met en relation deux rapports qui ont
+#      la population en commun : une partie de la corrélation vient
+#      de la construction. Elle est remplacée par la régression
+#      log(arrets) ~ log(population) + log(surface), dont les
+#      coefficients sont des élasticités. Le repérage des communes
+#      atypiques se fait sur les résidus de ce modèle.
 #
-# SOURCE SITG :
-#   OCS_POPBATLOG_COMMUNE    — 45 communes, données population dec. 2025
-#   OCS_POPBATLOG_VGE_SECTEUR — 16 secteurs ville de Genève, dec. 2025
-#   Licence : Open Data SITG — mention obligatoire en publication
-#   Citation : "Source : Système d'information du territoire à Genève (SITG)"
-#
-# =============================================================================
-# ÉTAPES :
-#   1. Chargement des couches SITG et reprojection
-#   2. Exploration géographique — combien d'arrêts couverts ?
-#   3. Jointure spatiale arrêts × communes
-#   4. Calcul des indicateurs par commune
-#   5. Test T-012 — corrélation densité × montées/habitant
-#   6. Identification des anomalies
-#   7. Jointure spatiale arrêts × secteurs (granularité fine — ville GE)
-#   8. Analyse intra-ville par secteur
-#   9. Visualisations
-# =============================================================================
+# DÉCALAGE TEMPOREL : la population SITG porte une date de
+# référence propre, relevée à l'exécution, qui n'est pas celle du
+# snapshot tpg. Le script affiche les deux.
+# ============================================================
 
-source("00_palette.R")
-library(sf)
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
+
 library(dplyr)
+library(tidyr)
+library(sf)
 library(ggplot2)
 library(scales)
+library(sandwich)
 
-# Désactiver S2 — géométries SITG contiennent des sommets dupliqués
-# qui causent des erreurs avec la géométrie sphérique de sf
-sf_use_s2(FALSE)
+# ── 1. CHARGEMENT AUTONOME (R-03) ───────────────────────────
 
-# =============================================================================
-# 1. CHARGEMENT ET REPROJECTION
-# =============================================================================
+# Le shapefile peut être rangé directement dans son dossier ou dans
+# un sous-dossier livré par le SITG. On le cherche au lieu de coder
+# un chemin qui dépendrait de la façon dont l'archive a été ouverte.
+trouver_shapefile <- function(dossier, motif) {
+  chemins <- list.files(file.path(DIR_SITG, dossier), pattern = motif,
+                        recursive = TRUE, full.names = TRUE)
+  if (length(chemins) == 0)
+    stop("Shapefile introuvable sous ", file.path(DIR_SITG, dossier),
+         " pour le motif ", motif)
+  if (length(chemins) > 1)
+    warning("Plusieurs shapefiles trouvés, le premier est retenu : ",
+            paste(basename(chemins), collapse = ", "))
+  chemins[1]
+}
 
-cat("=== CHARGEMENT DONNÉES SITG ===\n")
+chemin_communes <- trouver_shapefile("communes", "^OCS_POPBATLOG_COMMUNE\\.shp$")
+chemin_secteurs <- trouver_shapefile("secteurs", "^OCS_POPBATLOG_VGE_SECTEUR\\.shp$")
+chemin_lac      <- trouver_shapefile("lac", "^GEO_LAC\\.shp$")
 
-# Couche 1 — Communes (45 polygones, canton entier)
-communes_raw <- st_read(
-  "../data/raw/sitg/communes/OCS_POPBATLOG_COMMUNE-SHP/OCS_POPBATLOG_COMMUNE.shp",
-  quiet = TRUE
-)
-communes_wgs84 <- st_transform(communes_raw, crs = 4326)
+cat("Shapefile communes :", chemin_communes, "\n")
+cat("Shapefile secteurs :", chemin_secteurs, "\n")
+cat("Shapefile lac      :", chemin_lac, "\n\n")
 
-cat("Communes chargées  :", nrow(communes_raw), "\n")
-cat("CRS original       :", st_crs(communes_raw)$Name, "\n")
-cat("CRS après transform: WGS 84\n")
-cat("Date référence     :", communes_raw$DATE_REF[1], "\n\n")
+communes_raw <- st_read(chemin_communes, quiet = TRUE)
+secteurs_raw <- st_read(chemin_secteurs, quiet = TRUE)
+lac_raw      <- st_read(chemin_lac, quiet = TRUE)
 
-# Couche 2 — Secteurs ville de Genève (16 quartiers, granularité fine)
-secteurs_raw <- st_read(
-  "../data/raw/sitg/secteurs/OCS_POPBATLOG_VGE_SECTEUR-SHP/OCS_POPBATLOG_VGE_SECTEUR.shp",
-  quiet = TRUE
-)
-secteurs_wgs84 <- st_transform(secteurs_raw, crs = 4326)
+DATE_REF_SITG <- as.character(unique(communes_raw$DATE_REF))[1]
 
-cat("Secteurs chargés   :", nrow(secteurs_raw), "\n")
-cat("Date référence     :", secteurs_raw$DATE_REF[1], "\n\n")
+cat("Snapshot tpg :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Population SITG, date de référence :", DATE_REF_SITG, "\n")
+cat("Les deux sources n'ont pas la même date. À rappeler dans toute\n")
+cat("légende et dans la méthodologie.\n")
 
-# Arrêts actifs géolocalisés — conversion en objet sf
-# Si arrets_geo n'est pas en mémoire, recharger :
-# arrets_raw <- readRDS("../data/raw/arrets.rds")
-# arrets_geo <- arrets_raw %>%
-#   filter(actif == "Y") %>%
-#   tidyr::separate(coordonnees, into = c("latitude","longitude"),
-#                   sep = ",", convert = TRUE) %>%
-#   filter(!is.na(latitude), !is.na(longitude))
+cat("\nCommunes :", nrow(communes_raw), "| population totale :",
+    format(sum(communes_raw$POPULATION, na.rm = TRUE), big.mark = " "), "\n")
+cat("Secteurs :", nrow(secteurs_raw), "| population totale :",
+    format(sum(secteurs_raw$POPULATION, na.rm = TRUE), big.mark = " "), "\n")
+cat("Les secteurs ne couvrent que la Ville de Genève.\n")
+cat("Système de coordonnées SITG :", st_crs(communes_raw)$input, "\n")
 
-arrets_sf <- arrets_geo %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+arrets <- readRDS(file.path(DIR_RAW, "arrets.rds")) %>%
+  filter(actif == "Y") %>%
+  separate(coordonnees, into = c("latitude", "longitude"),
+           sep = ", ", convert = TRUE) %>%
+  filter(!is.na(latitude), !is.na(longitude))
 
-cat("Arrêts actifs      :", nrow(arrets_sf), "\n")
+arrets_sf <- st_as_sf(arrets, coords = c("longitude", "latitude"), crs = 4326)
 
-# =============================================================================
-# 2. EXPLORATION GÉOGRAPHIQUE — AVANT TOUTE DÉCISION
-# =============================================================================
+# Certaines géométries du fichier secteurs comportent des sommets
+# dupliqués, ce qui fait échouer la jointure spatiale. st_make_valid
+# les répare. On vérifie ce qui a été corrigé plutôt que de réparer
+# en silence.
+n_invalides_c <- sum(!st_is_valid(communes_raw))
+n_invalides_s <- sum(!st_is_valid(secteurs_raw))
+cat("Géométries invalides avant réparation : communes", n_invalides_c,
+    "| secteurs", n_invalides_s, "\n")
 
-cat("\n=== COUVERTURE GÉOGRAPHIQUE ===\n")
+# S-33 : retrait du lac, du Rhône et de l'Arve. Le découpage se fait
+# dans le système suisse (mètres), avant la conversion en degrés.
+if (st_crs(lac_raw) != st_crs(communes_raw))
+  lac_raw <- st_transform(lac_raw, st_crs(communes_raw))
+lac <- st_union(st_make_valid(lac_raw))
+cat("Surfaces d'eau retirées :", paste(lac_raw$NOM, collapse = ", "), "\n")
 
-cat("--- Emprise communes SITG ---\n")
-bb_communes <- st_bbox(communes_wgs84)
-cat("Lat :", round(bb_communes["ymin"],2), "→", round(bb_communes["ymax"],2), "\n")
-cat("Lon :", round(bb_communes["xmin"],2), "→", round(bb_communes["xmax"],2), "\n")
+retirer_eau <- function(polygones) {
+  p <- st_make_valid(polygones)
+  st_agr(p) <- "constant"   # les attributs valent pour la partie terrestre
+  p <- st_make_valid(st_difference(p, lac))
+  p$surface_terre_km2 <- as.numeric(st_area(p)) / 1e6
+  p
+}
 
-cat("\n--- Emprise arrêts TPG ---\n")
-bb_arrets <- st_bbox(arrets_sf)
-cat("Lat :", round(bb_arrets["ymin"],2), "→", round(bb_arrets["ymax"],2), "\n")
-cat("Lon :", round(bb_arrets["xmin"],2), "→", round(bb_arrets["xmax"],2), "\n")
+communes_terre <- retirer_eau(communes_raw)
+secteurs_terre <- retirer_eau(secteurs_raw)
 
-cat("\n--- Population totale couverte par SITG ---\n")
-cat("Communes :", sum(communes_raw$POPULATION, na.rm = TRUE), "habitants\n")
-cat("Secteurs :", sum(secteurs_raw$POPULATION, na.rm = TRUE), "habitants\n")
+comparaison_surfaces <- communes_terre %>%
+  st_drop_geometry() %>%
+  transmute(COMMUNE, surface_sitg_km2 = SHAPE_AREA / 1e6, surface_terre_km2,
+            part_eau_pct = round(100 * (1 - surface_terre_km2 / surface_sitg_km2), 1))
 
-# Observation : les secteurs (ville GE uniquement) ne couvrent qu'une partie
-# de la population cantonale. La couche communes est plus complète.
+cat("\n=== S-33 : SURFACE TERRESTRE ===\n")
+cat("Communes dont la surface SITG comprend de l'eau :",
+    sum(comparaison_surfaces$part_eau_pct >= 0.1), "sur", nrow(comparaison_surfaces), "\n")
+cat("Cinq communes les plus touchées (km2) :\n")
+print(as.data.frame(comparaison_surfaces %>%
+  arrange(desc(part_eau_pct)) %>% slice_head(n = 5) %>%
+  mutate(across(c(surface_sitg_km2, surface_terre_km2), ~ round(., 2)))))
+cat("Contrôle externe : Hermance 1.44 km2 et Versoix 10.51 km2 selon la\n")
+cat("statistique de la superficie.\n")
 
-# =============================================================================
-# 3. JOINTURE SPATIALE ARRÊTS × COMMUNES
-# =============================================================================
-# Note méthodologique : on utilise st_within (arrêt strictement dans le polygone)
-# plutôt que st_nearest_feature (qui assignerait même les arrêts français).
-# Les arrêts non assignés sont les arrêts hors canton (France, Vaud) — attendu.
+# Les ARRÊTS sont rattachés aux polygones administratifs complets :
+# un arrêt sur un pont ou une île du Rhône (Bel-Air) appartient bien
+# à sa commune. Seules les SURFACES viennent des polygones découpés.
+communes <- st_make_valid(st_transform(st_make_valid(communes_raw), 4326))
+secteurs <- st_make_valid(st_transform(st_make_valid(secteurs_raw), 4326))
+communes$surface_terre_km2 <- communes_terre$surface_terre_km2[match(communes$COMMUNE, communes_terre$COMMUNE)]
+secteurs$surface_terre_km2 <- secteurs_terre$surface_terre_km2[match(secteurs$NOM_SECTEU, secteurs_terre$NOM_SECTEU)]
+if (anyNA(communes$surface_terre_km2) || anyNA(secteurs$surface_terre_km2))
+  stop("Surface terrestre manquante pour une commune ou un secteur.")
+communes_carte_terre <- st_make_valid(st_transform(communes_terre, 4326))
 
-cat("\n=== JOINTURE SPATIALE ARRÊTS × COMMUNES ===\n")
+cat("\nGéométries invalides après réparation : communes",
+    sum(!st_is_valid(communes)), "| secteurs", sum(!st_is_valid(secteurs)),
+    "| communes découpées", sum(!st_is_valid(communes_carte_terre)), "\n")
 
-arrets_communes <- st_join(arrets_sf, communes_wgs84, join = st_within)
+cat("Arrêts actifs géolocalisés :", nrow(arrets_sf), "\n")
 
-n_assignes  <- sum(!is.na(arrets_communes$COMMUNE))
-n_hors      <- sum(is.na(arrets_communes$COMMUNE))
+# ── 2. MONTÉES PAR ARRÊT, PAR CODE (S-22) ───────────────────
 
+montees_par_code <- lire("journalier") %>%
+  filter(!is.na(arret_code_long)) %>%
+  group_by(arret_code_long) %>%
+  summarise(montees = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+
+cat("\nCodes d'arrêt dans le journalier :", nrow(montees_par_code), "\n")
+cat("Noms d'arrêt distincts parmi les arrêts actifs :",
+    n_distinct(arrets$nomarret), "pour", nrow(arrets), "arrêts.\n")
+cat("C'est pourquoi la jointure se fait par code et non par nom.\n")
+
+# ── 3. JOINTURE SPATIALE ARRÊTS ET COMMUNES ─────────────────
+# st_within : l'arrêt doit être strictement dans le polygone. Les
+# arrêts non assignés sont hors canton (France, Vaud), ce qui est
+# attendu et vérifié ci-dessous. Jointure sur les polygones
+# administratifs complets (voir section 1).
+
+arrets_communes <- st_join(arrets_sf, communes, join = st_within)
+
+n_assignes <- sum(!is.na(arrets_communes$COMMUNE))
+cat("\n=== JOINTURE ARRÊTS ET COMMUNES ===\n")
 cat("Arrêts assignés à une commune :", n_assignes,
-    "(", round(n_assignes/nrow(arrets_sf)*100, 1), "%)\n")
-cat("Arrêts hors canton (FR/VD)    :", n_hors, "\n")
+    "(", round(100 * n_assignes / nrow(arrets_sf), 1), "% )\n")
+cat("Arrêts hors canton :", nrow(arrets_sf) - n_assignes, "\n")
+cat("Répartition par pays des arrêts non assignés :\n")
+print(table(arrets_communes$pays[is.na(arrets_communes$COMMUNE)]))
 
-# =============================================================================
-# 4. CALCUL DES INDICATEURS PAR COMMUNE
-# =============================================================================
-
-# montees_par_arret construit dans script 09 — agrégation par nom d'arrêt
-# Si absent : construire depuis journalier
-# montees_par_arret <- journalier %>%
-#   filter(donnees_definitives == TRUE) %>%
-#   group_by(arret) %>%
-#   summarise(montees_totales = sum(nb_de_montees, na.rm = TRUE))
-
-cat("\n=== INDICATEURS PAR COMMUNE ===\n")
+# ── 4. INDICATEURS PAR COMMUNE ──────────────────────────────
 
 sitg_communes <- arrets_communes %>%
   st_drop_geometry() %>%
   filter(!is.na(COMMUNE)) %>%
-  left_join(montees_par_arret, by = c("nomarret" = "arret")) %>%
-  group_by(COMMUNE, POPULATION, SHAPE_AREA) %>%
-  summarise(
-    n_arrets        = n(),
-    montees_totales = sum(montees_totales, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  filter(POPULATION > 0, montees_totales > 0) %>%
+  left_join(montees_par_code, by = c("arretcodelong" = "arret_code_long")) %>%
+  group_by(COMMUNE, POPULATION, surface_terre_km2) %>%
+  summarise(n_arrets = n(),
+            montees_totales = sum(montees, na.rm = TRUE),
+            .groups = "drop") %>%
+  filter(POPULATION > 0) %>%
   mutate(
-    densite_pop     = POPULATION / (SHAPE_AREA / 1e6),
-    montees_par_hab = montees_totales / POPULATION,
-    arrets_par_km2  = n_arrets / (SHAPE_AREA / 1e6)
-  )
-
-cat("Communes dans l'analyse :", nrow(sitg_communes), "\n\n")
-
-sitg_communes %>%
-  dplyr::select(COMMUNE, POPULATION, densite_pop,
-                n_arrets, montees_par_hab) %>%
-  mutate(
-    densite_pop     = round(densite_pop),
-    montees_par_hab = round(montees_par_hab)
+    surface_km2      = surface_terre_km2,
+    densite_pop      = POPULATION / surface_km2,
+    arrets_par_km2   = n_arrets / surface_km2,
+    arrets_par_1000h = 1000 * n_arrets / POPULATION,
+    charge_par_hab   = montees_totales / POPULATION
   ) %>%
-  arrange(desc(montees_par_hab)) %>%
-  print(n = 20)
+  select(-surface_terre_km2)
 
-# =============================================================================
-# 5. TEST T-012 — CORRÉLATION DENSITÉ × MONTÉES PAR HABITANT
-# =============================================================================
-#
-# Hypothèse H0 : pas de corrélation entre densité et fréquentation/habitant
-# Hypothèse H1 : corrélation positive — plus dense = plus de TPG/habitant
-#
-# Conditions vérifiées (console 28.04.2026) :
-#   Shapiro-Wilk densite_pop     : W=0.663, p=8.6×10⁻⁹ → NON normale
-#   Shapiro-Wilk montees_par_hab : W=0.648, p=5.0×10⁻⁹ → NON normale
-#   → Spearman retenu comme test de référence (robuste aux outliers)
-#   → Pearson calculé pour référence mais biaisé par l'outlier Genève ville
-#
-# Note sur l'outlier Genève ville :
-#   11 511 hab/km² — 5x supérieur à la 2e commune (Carouge 8 548)
-#   Genève ville tire le Pearson vers le haut (r=0.856 vs Spearman r=0.695)
-#   Le Spearman est l'indicateur de référence pour ces données.
+cat("\n=== INDICATEURS PAR COMMUNE ===\n")
+cat("Communes retenues :", nrow(sitg_communes), "sur", nrow(communes_raw), "\n")
+cat("Commune(s) sans arrêt actif, hors analyse :",
+    paste(setdiff(communes_raw$COMMUNE, sitg_communes$COMMUNE), collapse = ", "), "\n")
+cat("Surface terrestre totale :", round(sum(sitg_communes$surface_km2)), "km2\n")
 
-cat("\n=== TEST DE NORMALITÉ ===\n")
-sw_dens <- shapiro.test(sitg_communes$densite_pop)
-sw_mont <- shapiro.test(sitg_communes$montees_par_hab)
-cat("Shapiro densite_pop     : W =", round(sw_dens$statistic, 3),
-    "p =", format(sw_dens$p.value, scientific = TRUE),
-    "→", ifelse(sw_dens$p.value < 0.05, "NON normale", "normale"), "\n")
-cat("Shapiro montees_par_hab : W =", round(sw_mont$statistic, 3),
-    "p =", format(sw_mont$p.value, scientific = TRUE),
-    "→", ifelse(sw_mont$p.value < 0.05, "NON normale", "normale"), "\n")
+cat("\nDix communes à la plus forte charge rapportée à la population :\n")
+print(as.data.frame(sitg_communes %>%
+  arrange(desc(charge_par_hab)) %>% slice_head(n = 10) %>%
+  transmute(COMMUNE, POPULATION, densité = round(densite_pop),
+            n_arrets, charge_par_hab = round(charge_par_hab))))
+cat("\nCe classement reflète d'abord la concentration des déplacements,\n")
+cat("pas l'usage des transports par les habitants de ces communes (S-21).\n")
 
-cat("\n=== T-012 — CORRÉLATION SPEARMAN DENSITÉ × MONTÉES/HAB ===\n")
+# ── 5. COUVERTURE EN ARRÊTS : L'INDICATEUR D'ÉQUITÉ ─────────
+# Le nombre d'arrêts par habitant et par km2 mesure ce que la
+# collectivité met à disposition, sans dépendre de qui utilise le
+# réseau ni d'où viennent les voyageurs.
 
-cor_spearman <- cor.test(sitg_communes$densite_pop,
-                         sitg_communes$montees_par_hab,
-                         method = "spearman",
-                         exact  = FALSE)
+cat("\n=== COUVERTURE EN ARRÊTS ===\n")
+cat("Dix communes les mieux dotées pour mille habitants :\n")
+print(as.data.frame(sitg_communes %>%
+  arrange(desc(arrets_par_1000h)) %>% slice_head(n = 10) %>%
+  transmute(COMMUNE, POPULATION, n_arrets,
+            arrets_par_1000h = round(arrets_par_1000h, 2),
+            arrets_par_km2 = round(arrets_par_km2, 1))))
 
-cor_pearson  <- cor.test(sitg_communes$densite_pop,
-                         sitg_communes$montees_par_hab,
-                         method = "pearson")
+cat("\nDix communes les moins bien dotées pour mille habitants :\n")
+print(as.data.frame(sitg_communes %>%
+  arrange(arrets_par_1000h) %>% slice_head(n = 10) %>%
+  transmute(COMMUNE, POPULATION, n_arrets,
+            arrets_par_1000h = round(arrets_par_1000h, 2),
+            arrets_par_km2 = round(arrets_par_km2, 1))))
 
-cat("n communes        :", nrow(sitg_communes), "\n")
-cat("Spearman rho      :", round(cor_spearman$estimate, 3),
-    "(référence — robuste aux outliers)\n")
-cat("p-value Spearman  :", format(cor_spearman$p.value, scientific = TRUE), "\n")
-cat("Pearson r         :", round(cor_pearson$estimate, 3),
-    "(biaisé par outlier Genève — indicatif)\n")
-cat("p-value Pearson   :", format(cor_pearson$p.value, scientific = TRUE), "\n")
+cat("\nLes communes peu peuplées ont mécaniquement plus d'arrêts par\n")
+cat("habitant : le réseau doit les traverser quelle que soit leur\n")
+cat("population. Les deux extrémités du classement se lisent ensemble.\n")
 
-if (cor_spearman$p.value < 0.05) {
-  cat("\n-> REJET H0 — corrélation significative densité × fréquentation\n")
-  cat("   Les communes denses utilisent davantage les TPG par habitant.\n")
+# ── 6. T-012 : POPULATION, SURFACE ET NOMBRE D'ARRÊTS (S-33) ─
+# Modèle : log(arrets) = a + b_pop * log(population) + b_surf * log(surface)
+# b_pop et b_surf sont des élasticités : +1 % de population, à
+# surface égale, donne b_pop % d'arrêts en plus.
+# Si b_pop + b_surf = 1, le nombre d'arrêts par habitant ne dépend
+# que de la densité, avec une élasticité b_pop - 1. On le teste.
+# Erreurs types HC3 (robustes à l'hétéroscédasticité, adaptées à
+# un petit échantillon), à côté des erreurs types classiques.
+
+modele <- lm(log(n_arrets) ~ log(POPULATION) + log(surface_km2), data = sitg_communes)
+V_hc3  <- vcovHC(modele, type = "HC3")
+coefs  <- coef(modele)
+se_cl  <- sqrt(diag(vcov(modele)))
+se_hc3 <- sqrt(diag(V_hc3))
+t_crit <- qt(0.975, df = df.residual(modele))
+
+tab_t012 <- data.frame(
+  terme      = c("constante", "log(population)", "log(surface terrestre)"),
+  estimation = round(coefs, 3),
+  ic_inf_hc3 = round(coefs - t_crit * se_hc3, 3),
+  ic_sup_hc3 = round(coefs + t_crit * se_hc3, 3),
+  p_hc3      = signif(2 * pt(-abs(coefs / se_hc3), df.residual(modele)), 3),
+  p_classique = signif(2 * pt(-abs(coefs / se_cl), df.residual(modele)), 3),
+  row.names = NULL)
+
+somme   <- sum(coefs[2:3])
+se_som  <- sqrt(sum(V_hc3[2:3, 2:3]))
+ic_som  <- round(somme + c(-1, 1) * t_crit * se_som, 3)
+r2      <- summary(modele)$r.squared
+cor_reg <- cor(log(sitg_communes$POPULATION), log(sitg_communes$surface_km2))
+
+cat("\n=== T-012 : RÉGRESSION DU NOMBRE D'ARRÊTS (S-33) ===\n")
+cat("n communes :", nrow(sitg_communes), "| R2 :", round(r2, 3),
+    "| corrélation entre les deux régresseurs :", round(cor_reg, 3), "\n")
+print(tab_t012)
+cat("\nSomme des élasticités :", round(somme, 3),
+    "| IC 95 % HC3 : [", ic_som[1], ";", ic_som[2], "]\n")
+if (ic_som[1] <= 1 && ic_som[2] >= 1) {
+  cat("L'intervalle contient 1 : les données sont compatibles avec un nombre\n")
+  cat("d'arrêts par habitant qui ne dépend que de la densité, avec une\n")
+  cat("élasticité d'environ", round(coefs[2] - 1, 2), "(une densité doublée donne\n")
+  cat("environ", round(100 * (2^(coefs[2] - 1) - 1)), "% d'arrêts par habitant).\n")
 } else {
-  cat("\n-> NON-REJET H0\n")
+  cat("L'intervalle exclut 1 : la taille de la commune compte en plus de sa\n")
+  cat("densité.\n")
 }
+cat("\nLecture : à surface égale, doubler la population ajoute environ",
+    round(100 * (2^coefs[2] - 1)), "% d'arrêts ;\nà population égale, doubler",
+    "la surface en ajoute environ", round(100 * (2^coefs[3] - 1)), "%.\n")
 
-cat("\n--- Ce qu'on NE peut PAS affirmer ---\n")
-cat("  - Que la densité CAUSE la fréquentation.\n")
-cat("    Les communes denses ont aussi plus d'offre TPG.\n")
-cat("    Sans km produits par commune, on ne peut pas démêler\n")
-cat("    l'effet densité de l'effet offre.\n")
-cat("  - [TPG] La part de la fréquentation expliquée par l'offre vs\n")
-cat("    la demande nécessite un croisement avec les km produits\n")
-cat("    par commune — données disponibles en interne.\n")
+sp_charge <- suppressWarnings(
+  cor.test(sitg_communes$densite_pop, sitg_communes$charge_par_hab,
+           method = "spearman"))
+sp_couverture <- suppressWarnings(
+  cor.test(sitg_communes$densite_pop, sitg_communes$arrets_par_1000h,
+           method = "spearman"))
+cat("\nÀ titre descriptif seulement : Spearman densité et arrêts pour mille\n")
+cat("habitants, rho =", round(as.numeric(sp_couverture$estimate), 3),
+    "(rapports qui partagent la population, S-33) ; densité et charge par\n")
+cat("habitant, rho =", round(as.numeric(sp_charge$estimate), 3),
+    "(indicateur biaisé, S-21).\n")
 
-# =============================================================================
-# 6. IDENTIFICATION DES ANOMALIES
-# =============================================================================
-#
-# Méthode : résidus de la régression Spearman (rang)
-# Les communes au-dessus de la tendance sont sur-fréquentées vs leur densité.
-# Les communes en dessous sont sous-fréquentées.
-# On identifie les outliers > 1.5 × IQR des résidus.
+enregistrer(
+  test_id = "T-012", script = "12_sitg_equite_territoriale.R",
+  methode = "Régression log(arrets) ~ log(population) + log(surface terrestre), par commune, erreurs types HC3",
+  n = nrow(sitg_communes), statistique = round(r2, 3), p_value = tab_t012$p_hc3[2],
+  effet_nom = "Élasticité du nombre d'arrêts à la population",
+  effet = tab_t012$estimation[2], ic_inf = tab_t012$ic_inf_hc3[2], ic_sup = tab_t012$ic_sup_hc3[2],
+  note = paste0("Élasticité à la surface ", tab_t012$estimation[3], " [",
+                tab_t012$ic_inf_hc3[3], " ; ", tab_t012$ic_sup_hc3[3], "]. Somme ",
+                round(somme, 3), " [", ic_som[1], " ; ", ic_som[2], "]. R2 ", round(r2, 3),
+                ". Surface terrestre (lac retiré, S-33). Population SITG au ", DATE_REF_SITG,
+                ", arrêts au ", SNAPSHOT_ID, ". Remplace le Spearman densité/couverture.")
+)
 
-cat("\n=== ANOMALIES — ÉCARTS À LA TENDANCE ===\n")
+# ── 7. COMMUNES ATYPIQUES : RÉSIDUS DU MODÈLE (S-33) ────────
+# Un résidu négatif : moins d'arrêts que ne le voudraient la
+# population et la surface. Résidus studentisés ; seuil de
+# repérage |r| > 2 fixé à l'avance. Ce n'est pas un test : avec
+# 44 communes, on attend environ deux dépassements par hasard.
+# (Remplace l'écart de rangs de S-23.)
 
-# Régression sur les rangs (cohérente avec Spearman)
-sitg_communes <- sitg_communes %>%
-  mutate(
-    rang_densite = rank(densite_pop),
-    rang_montees = rank(montees_par_hab),
-    residu_rang  = rang_montees - rang_densite
-  )
+sitg_communes$residu     <- round(residuals(modele), 3)
+sitg_communes$residu_stu <- round(rstudent(modele), 2)
+SEUIL_RESIDU <- 2
 
-iqr_residu <- IQR(sitg_communes$residu_rang)
-seuil_haut <-  1.5 * iqr_residu
-seuil_bas  <- -1.5 * iqr_residu
+cat("\n=== COMMUNES ATYPIQUES (repérage, pas un test) ===\n")
+cat("Résidus studentisés du modèle de la section 6, seuil |r| >", SEUIL_RESIDU, "\n")
+cat("\nCinq communes les moins dotées relativement au modèle :\n")
+print(as.data.frame(sitg_communes %>% arrange(residu_stu) %>% slice_head(n = 5) %>%
+  transmute(COMMUNE, POPULATION, surface_km2 = round(surface_km2, 2), n_arrets,
+            attendu = round(exp(log(n_arrets) - residu), 1), residu_stu)))
+cat("\nCinq communes les mieux dotées relativement au modèle :\n")
+print(as.data.frame(sitg_communes %>% arrange(desc(residu_stu)) %>% slice_head(n = 5) %>%
+  transmute(COMMUNE, POPULATION, surface_km2 = round(surface_km2, 2), n_arrets,
+            attendu = round(exp(log(n_arrets) - residu), 1), residu_stu)))
+cat("\nCommunes au-delà du seuil :",
+    ifelse(any(abs(sitg_communes$residu_stu) > SEUIL_RESIDU),
+           paste(sitg_communes$COMMUNE[abs(sitg_communes$residu_stu) > SEUIL_RESIDU], collapse = ", "),
+           "aucune"), "\n")
 
-cat("--- Sur-fréquentées (montées > densité attendue) ---\n")
-sitg_communes %>%
-  filter(residu_rang > seuil_haut) %>%
-  dplyr::select(COMMUNE, densite_pop, montees_par_hab,
-                n_arrets, residu_rang) %>%
-  mutate(densite_pop = round(densite_pop),
-         montees_par_hab = round(montees_par_hab)) %>%
-  arrange(desc(residu_rang)) %>%
-  print()
+cat("\nUn résidu ne dit pas si la desserte est insuffisante : la fréquence\n")
+cat("des passages, les tracés et la demande réelle ne sont pas mesurés ici.\n")
 
-cat("\n--- Sous-fréquentées (montées < densité attendue) ---\n")
-sitg_communes %>%
-  filter(residu_rang < seuil_bas) %>%
-  dplyr::select(COMMUNE, densite_pop, montees_par_hab,
-                n_arrets, residu_rang) %>%
-  mutate(densite_pop = round(densite_pop),
-         montees_par_hab = round(montees_par_hab)) %>%
-  arrange(residu_rang) %>%
-  print()
+# ── 8. SECTEURS DE LA VILLE DE GENEVE ───────────────────────
 
-# [TPG] Les communes sous-fréquentées par rapport à leur densité sont les
-# candidates prioritaires pour une analyse d'offre :
-#   - Trop peu d'arrêts ? Fréquence insuffisante ? Tracés inadaptés ?
-#   - Ces questions nécessitent un croisement avec les km produits
-#     et les plannings horaires par commune (données internes TPG).
-# Sans ces données, on ne peut que constater l'écart, pas l'expliquer.
-
-# =============================================================================
-# 7. JOINTURE SPATIALE ARRÊTS × SECTEURS (GRANULARITÉ FINE — VILLE GE)
-# =============================================================================
-
-cat("\n=== JOINTURE SPATIALE ARRÊTS × SECTEURS (VILLE GE) ===\n")
-
-arrets_secteurs <- st_join(arrets_sf, secteurs_wgs84, join = st_within)
-
+arrets_secteurs <- st_join(arrets_sf, secteurs, join = st_within)
 n_sect <- sum(!is.na(arrets_secteurs$NOM_SECTEU))
+
+cat("\n=== SECTEURS DE LA VILLE DE GENÈVE ===\n")
 cat("Arrêts dans un secteur :", n_sect,
-    "(", round(n_sect/nrow(arrets_sf)*100, 1), "% des arrêts actifs)\n")
-cat("Secteurs couverts      :", n_distinct(arrets_secteurs$NOM_SECTEU, na.rm=TRUE), "\n")
-
-# =============================================================================
-# 8. ANALYSE INTRA-VILLE PAR SECTEUR
-# =============================================================================
-
-cat("\n=== INDICATEURS PAR SECTEUR (VILLE DE GENÈVE) ===\n")
+    "(", round(100 * n_sect / nrow(arrets_sf), 1), "% des arrêts actifs )\n")
+cat("Secteurs couverts :", n_distinct(arrets_secteurs$NOM_SECTEU, na.rm = TRUE),
+    "sur", nrow(secteurs_raw), "\n")
 
 sitg_secteurs <- arrets_secteurs %>%
   st_drop_geometry() %>%
   filter(!is.na(NOM_SECTEU)) %>%
-  left_join(montees_par_arret, by = c("nomarret" = "arret")) %>%
-  group_by(NOM_SECTEU, POPULATION, SHAPE_AREA) %>%
-  summarise(
-    n_arrets        = n(),
-    montees_totales = sum(montees_totales, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  filter(POPULATION > 0, montees_totales > 0) %>%
-  mutate(
-    densite_pop     = round(POPULATION / (SHAPE_AREA / 1e6)),
-    montees_par_hab = round(montees_totales / POPULATION),
-    arrets_par_km2  = round(n_arrets / (SHAPE_AREA / 1e6), 1)
-  )
+  left_join(montees_par_code, by = c("arretcodelong" = "arret_code_long")) %>%
+  group_by(NOM_SECTEU, POPULATION, surface_terre_km2) %>%
+  summarise(n_arrets = n(), montees_totales = sum(montees, na.rm = TRUE),
+            .groups = "drop") %>%
+  filter(POPULATION > 0) %>%
+  mutate(surface_km2 = surface_terre_km2,
+         densite_pop = POPULATION / surface_km2,
+         arrets_par_1000h = 1000 * n_arrets / POPULATION,
+         charge_par_hab = montees_totales / POPULATION) %>%
+  select(-surface_terre_km2)
 
-sitg_secteurs %>%
-  arrange(desc(montees_par_hab)) %>%
-  print()
+cat("\nIndicateurs par secteur (surface terrestre) :\n")
+print(as.data.frame(sitg_secteurs %>%
+  arrange(desc(densite_pop)) %>%
+  transmute(NOM_SECTEU, POPULATION, densité = round(densite_pop),
+            n_arrets, arrets_par_1000h = round(arrets_par_1000h, 2),
+            charge_par_hab = round(charge_par_hab))))
 
-cat("\n--- Corrélation densité × montées/hab (secteurs) ---\n")
-if (nrow(sitg_secteurs) >= 5) {
-  cor_sect <- cor.test(sitg_secteurs$densite_pop,
-                       sitg_secteurs$montees_par_hab,
-                       method = "spearman", exact = FALSE)
-  cat("Spearman rho :", round(cor_sect$estimate, 3),
-      "| p =", format(cor_sect$p.value, scientific = TRUE), "\n")
-  cat("n secteurs   :", nrow(sitg_secteurs), "\n")
-} else {
-  cat("Trop peu de secteurs pour un test fiable.\n")
-}
+# ── 9. FIGURES ──────────────────────────────────────────────
 
-# =============================================================================
-# 9. VISUALISATIONS
-# =============================================================================
+p_couverture <- ggplot(sitg_communes, aes(x = densite_pop, y = arrets_par_1000h)) +
+  geom_point(color = ROUGE_PRINCIPAL, size = 2.5, alpha = 0.8) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+              color = COL_NEUTRE, linewidth = 0.6, linetype = "dashed") +
+  scale_x_log10(labels = label_number(big.mark = " ")) +
+  scale_y_log10() +
+  labs(title = "Densité de population et couverture en arrêts",
+       subtitle = paste0("Une commune par point, ", nrow(sitg_communes),
+                         " communes. Surface terrestre, lac retiré. Élasticités du nombre\n",
+                         "d'arrêts : population ", round(coefs[2], 2), ", surface ",
+                         round(coefs[3], 2), " (R2 = ", round(r2, 2),
+                         "). Échelles logarithmiques."),
+       x = "Habitants par km2 de terre", y = "Arrêts pour mille habitants",
+       caption = paste(SOURCE_TPG, SOURCE_SITG,
+                       paste0("Population au ", DATE_REF_SITG,
+                              ". Surfaces recalculées après retrait des surfaces d'eau."),
+                       sep = "\n")) +
+  theme_projet()
 
-# --- VIZ 1 : Scatter densité × montées/hab par commune ---
-p_scatter_communes <- sitg_communes %>%
-  mutate(
-    anomalie = case_when(
-      residu_rang > seuil_haut ~ "Sur-fréquentée",
-      residu_rang < seuil_bas  ~ "Sous-fréquentée",
-      TRUE                     ~ "Dans la tendance"
-    ),
-    anomalie = factor(anomalie,
-                      levels = c("Sur-fréquentée",
-                                 "Dans la tendance",
-                                 "Sous-fréquentée"))
-  ) %>%
-  ggplot(aes(x = densite_pop,
-             y = montees_par_hab,
-             color = anomalie,
-             label = COMMUNE)) +
-  geom_point(size = 3, alpha = 0.8) +
-  geom_text(size = 2.8, vjust = -0.8, check_overlap = TRUE) +
-  geom_smooth(method = "lm", se = TRUE, color = "grey50",
-              linewidth = 0.8, linetype = "dashed") +
-  scale_color_manual(values = c(
-    "Sur-fréquentée"   = "#27AE60",
-    "Dans la tendance" = TPG_RED,
-    "Sous-fréquentée"  = "#E67E22"
-  )) +
-  scale_x_continuous(labels = comma_format(big.mark = " ")) +
-  scale_y_continuous(labels = comma_format(big.mark = " ")) +
-  labs(
-    title    = "Densité de population vs fréquentation TPG par commune",
-    subtitle = paste0("Spearman rho = 0.695, p = 1.65×10⁻⁷ | n = 44 communes\n",
-                      "Anomalies = communes s'écartant significativement de la tendance"),
-    x        = "Densité de population (hab/km²)",
-    y        = "Montées TPG par habitant",
-    color    = NULL,
-    caption  = paste0("Sources : opendata.tpg.ch | SITG (dec. 2025) | Frat DAG 2026")
-  ) +
-  theme_tpg()
+print(p_couverture)
+ggsave(file.path(DIR_FIG, "12_densite_couverture.png"), p_couverture,
+       width = 10, height = 7, dpi = 150)
 
-ggsave("../outputs/12_scatter_densite_frequentation.png",
-       p_scatter_communes, width = 12, height = 7, dpi = 150)
-cat("\nGraphique sauvegardé : 12_scatter_densite_frequentation.png\n")
+communes_carte <- communes_carte_terre %>%
+  left_join(sitg_communes %>% select(COMMUNE, arrets_par_1000h), by = "COMMUNE")
 
-# --- VIZ 2 : Barplot montées/hab par commune (top 20) ---
-p_barplot_communes <- sitg_communes %>%
-  arrange(desc(montees_par_hab)) %>%
-  head(20) %>%
-  mutate(COMMUNE = factor(COMMUNE, levels = rev(COMMUNE))) %>%
-  ggplot(aes(x = COMMUNE,
-             y = montees_par_hab,
-             fill = densite_pop)) +
-  geom_col(alpha = 0.85) +
-  scale_fill_gradient(low = "#FEF9C3", high = TPG_RED,
-                      name = "Densité\n(hab/km²)",
-                      labels = comma_format(big.mark = " ")) +
-  scale_y_continuous(labels = comma_format(big.mark = " ")) +
-  coord_flip() +
-  labs(
-    title    = "Top 20 communes — montées TPG par habitant",
-    subtitle = "Couleur = densité de population | Source SITG dec. 2025",
-    x        = NULL,
-    y        = "Montées TPG / habitant",
-    caption  = "Sources : opendata.tpg.ch | SITG | Frat DAG 2026"
-  ) +
-  theme_tpg()
+p_carte <- ggplot(communes_carte) +
+  geom_sf(aes(fill = arrets_par_1000h), color = "white", linewidth = 0.2) +
+  scale_fill_gradient(low = "#F5E4E6", high = ROUGE_PRINCIPAL,
+                      name = "Arrêts pour\nmille habitants",
+                      na.value = "grey90") +
+  labs(title = "Couverture en arrêts par commune",
+       subtitle = paste0("Arrêts actifs pour mille habitants. Population SITG, état ",
+                         DATE_REF_SITG, ".\nEn gris : commune sans arrêt actif."),
+       caption = paste(SOURCE_TPG, SOURCE_SITG,
+                       paste0("Population au ", DATE_REF_SITG,
+                              ". Surfaces recalculées après retrait des surfaces d'eau."),
+                       sep = "\n")) +
+  theme_projet() +
+  # theme_projet() règle axis.text.x (rotation), plus spécifique que
+  # axis.text : il faut donc neutraliser chaque axe explicitement.
+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(),
+        axis.ticks = element_blank(), axis.title = element_blank(),
+        panel.grid = element_blank())
 
-ggsave("../outputs/12_barplot_montees_par_hab.png",
-       p_barplot_communes, width = 10, height = 7, dpi = 150)
-cat("Graphique sauvegardé : 12_barplot_montees_par_hab.png\n")
+print(p_carte)
+ggsave(file.path(DIR_FIG, "12_carte_couverture.png"), p_carte,
+       width = 10, height = 8, dpi = 150)
+message("Figures enregistrées.")
 
-# --- VIZ 3 : Barplot secteurs ville de Genève ---
-if (nrow(sitg_secteurs) > 0) {
-  p_secteurs <- sitg_secteurs %>%
-    arrange(desc(montees_par_hab)) %>%
-    mutate(NOM_SECTEU = factor(NOM_SECTEU, levels = rev(NOM_SECTEU))) %>%
-    ggplot(aes(x = NOM_SECTEU,
-               y = montees_par_hab,
-               fill = densite_pop)) +
-    geom_col(alpha = 0.85) +
-    scale_fill_gradient(low = "#FEF9C3", high = TPG_RED,
-                        name = "Densité\n(hab/km²)",
-                        labels = comma_format(big.mark = " ")) +
-    scale_y_continuous(labels = comma_format(big.mark = " ")) +
-    coord_flip() +
-    labs(
-      title    = "Quartiers ville de Genève — montées TPG par habitant",
-      subtitle = "Granularité fine (16 secteurs) | Source SITG dec. 2025",
-      x        = NULL,
-      y        = "Montées TPG / habitant",
-      caption  = "Sources : opendata.tpg.ch | SITG | Frat DAG 2026"
-    ) +
-    theme_tpg()
-  
-  ggsave("../outputs/12_barplot_secteurs_ville.png",
-         p_secteurs, width = 10, height = 7, dpi = 150)
-  cat("Graphique sauvegardé : 12_barplot_secteurs_ville.png\n")
-}
+# ── 10. SAUVEGARDE ──────────────────────────────────────────
 
-# =============================================================================
-# BILAN SCRIPT 12
-# =============================================================================
+write.csv(sitg_communes %>%
+            mutate(across(where(is.numeric), ~ round(., 3))),
+          file.path(DIR_RES, paste0("12_communes_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(sitg_secteurs %>%
+            mutate(across(where(is.numeric), ~ round(., 3))),
+          file.path(DIR_RES, paste0("12_secteurs_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
 
-cat("\n=== BILAN SCRIPT 12 ===\n")
-cat("Couches SITG       : communes (45) + secteurs ville GE (16)\n")
-cat("Arrêts assignés    : communes", n_assignes, "| secteurs", n_sect, "\n")
-cat("T-012 Spearman     : rho =", round(cor_spearman$estimate, 3),
-    "| p =", format(cor_spearman$p.value, scientific = TRUE), "\n")
-cat("Anomalies détectées:\n")
-cat("  Sur-fréquentées  :",
-    sum(sitg_communes$residu_rang > seuil_haut), "communes\n")
-cat("  Sous-fréquentées :",
-    sum(sitg_communes$residu_rang < seuil_bas), "communes\n")
-cat("3 graphiques sauvegardés dans outputs/\n")
-cat("\nCitation SITG obligatoire en publication :\n")
-cat("  'Source : Système d'information du territoire à Genève (SITG),\n")
-cat("   extrait en avril 2026.'\n")
-cat("\n[TPG] Limites analytiques documentées :\n")
-cat("  - Corrélation densité/fréquentation ≠ causalité\n")
-cat("  - Sans km produits par commune, on ne distingue pas\n")
-cat("    effet offre de l'effet demande\n")
-cat("  - Communes sous-fréquentées = candidats à une analyse d'offre interne\n")
+message("Script 12 terminé. Population SITG au ", DATE_REF_SITG,
+        ", montées tpg au ", format(DATE_COUPURE), ".")

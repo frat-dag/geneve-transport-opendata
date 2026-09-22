@@ -1,8 +1,8 @@
-﻿# R
+# R
 .Rhistory
 .RData
 .Rproj.user/
-*.Rproj
+#*.Rproj
 
 # Python
 __pycache__/
@@ -30,3 +30,17 @@ outputs/TPG_confidentiel.md
 
 #outputs en général (bcp de fichiers inutiles)
 outputs/
+
+# Documents de travail internes, ne jamais publier
+CORRECTIONS.md
+PASSATION_*.md
+CONTEXTE_EXTERNE.md
+DOCUMENTATION_TECHNIQUE.md
+JOURNAL_ANALYTIQUE.md
+REPRISE_PROJET.md
+R/old_code_AVRIL/
+figures/old_figures/
+logs/
+Rplots.pdf
+README_clean.md
+figures/*_files/

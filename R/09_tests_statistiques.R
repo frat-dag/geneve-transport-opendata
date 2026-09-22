@@ -1,700 +1,583 @@
 # ============================================================
-# SCRIPT 09 — RÉCAPITULATIF TESTS STATISTIQUES
-# Projet : TPG Open Data Analysis
+# SCRIPT 09 - TESTS COMPLÉMENTAIRES
 # Auteur : Frat DAG
-# Date   : avril 2026
+# Corrections : R-01, R-02, R-05, R-07, R-08, R-09, T-06,
+#               S-06, S-07, S-10, S-11, S-13, S-14, S-18, S-29,
+#               S-34
 # ------------------------------------------------------------
-# OBJECTIF : Tests complémentaires non intégrés dans les
-# scripts précédents :
-#   T-007 : Concentration trafic — indice de Gini + bootstrap
-#   T-008 : Corrélation fréquentation × km produits
-#   T-009 : Impact gratuité jeunes (jan 2025)
+# TESTS :
+#   T-007  : concentration du trafic entre arrêts (Gini)
+#   T-008  : lien entre offre et fréquentation par ligne
+#   T-009  : gratuité jeunes de janvier 2025
+#   AM-002 : évolution des lignes scolaires
 # ============================================================
 
-# ── 1. NETTOYAGE ET PACKAGES ─────────────────────────────────
-
-rm(list = ls())
-gc()
-
-# Définir le répertoire de travail — adapter selon votre environnement
-# setwd("chemin/vers/tpg-opendata-analysis/R")
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(scales)
 library(tidyr)
+library(strucchange)
 
-# ── 2. CHARGEMENT ───────────────────────────────────────────
+set.seed(SEED)
 
-journalier <- readRDS("../data/raw/journalier.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne))
+# ── 1. CHARGEMENT ───────────────────────────────────────────
 
-mensuel <- readRDS("../data/raw/mensuel.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
+journalier <- lire("journalier")
+mensuel    <- lire("mensuel") %>%
   filter(!is.na(ligne)) %>%
-  mutate(date = ym(mois), ligne = as.character(ligne))
+  mutate(date = ym(mois)) %>%
+  filter(date <= DATE_COUPURE)
+km_prod    <- lire("km_prod")
 
-km_prod <- readRDS("../data/raw/km_prod.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne))
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Journalier :", nrow(journalier), "| Mensuel :", nrow(mensuel),
+    "| Km produits :", nrow(km_prod), "\n")
 
-cat("Journalier :", nrow(journalier), "lignes\n")
-cat("Mensuel    :", nrow(mensuel), "lignes\n")
-cat("Km produits:", nrow(km_prod), "lignes\n")
+# ── 2. T-007 : CONCENTRATION DU TRAFIC ──────────────────────
+# Unité d'analyse : le lieu d'arrêt, c'est-à-dire le nom d'arrêt,
+# tous quais confondus. Les montées de tous les quais d'un même nom
+# sont additionnées : chaque montée est comptée une fois.
+#
+# Fenêtre : les 12 derniers mois avant la coupure. Sur toute la
+# période du journalier, un arrêt fermé ou ouvert en cours de route
+# n'a qu'une partie de ses montées, ce qui gonfle artificiellement
+# la concentration. La période complète reste affichée en robustesse.
 
-# ── 3. TEST T-007 — INDICE DE GINI (CONCENTRATION ARRÊTS) ───
-# Hypothèse : la distribution du trafic entre arrêts est
-# significativement concentrée (Gini > 0)
+D_DEBUT_12M <- DATE_COUPURE %m-% months(12) + days(1)
 
-# Agrégation : montées totales par arrêt sur toute la période
-montees_par_arret <- journalier %>%
-  filter(!is.na(arret)) %>%
-  group_by(arret) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  arrange(montees_totales)
-
-cat("Nombre d'arrêts distincts :", nrow(montees_par_arret), "\n")
-cat("Total montées             :",
-    round(sum(montees_par_arret$montees_totales) / 1e6, 1), "M\n\n")
-
-# Fonction Gini
 gini <- function(x) {
-  x <- sort(x[x > 0])
-  n <- length(x)
+  x <- sort(x[x > 0]); n <- length(x)
   2 * sum(x * seq_len(n)) / (n * sum(x)) - (n + 1) / n
 }
 
-gini_obs <- gini(montees_par_arret$montees_totales)
-cat("Indice de Gini observé :", round(gini_obs, 4), "\n\n")
+concentration <- function(df) {
+  m <- df %>%
+    filter(!is.na(arret)) %>%
+    group_by(arret) %>%
+    summarise(montees_totales = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+    arrange(montees_totales)
+  k <- ceiling(0.1 * nrow(m))
+  list(donnees = m, gini = gini(m$montees_totales), n_top10 = k,
+       part_top10 = 100 * sum(sort(m$montees_totales, decreasing = TRUE)[1:k]) /
+         sum(m$montees_totales))
+}
 
-# Bootstrap — intervalle de confiance à 95%
-set.seed(42)
-n_boot <- 2000
-gini_boot <- replicate(n_boot, {
-  echantillon <- sample(montees_par_arret$montees_totales,
-                        replace = TRUE)
-  gini(echantillon)
-})
+c12  <- concentration(journalier %>% filter(date >= D_DEBUT_12M))
+ctot <- concentration(journalier)
 
-ic_inf <- quantile(gini_boot, 0.025)
-ic_sup <- quantile(gini_boot, 0.975)
+montees_par_arret <- c12$donnees
+gini_obs   <- c12$gini
+n_top10    <- c12$n_top10
+part_top10 <- c12$part_top10
 
-cat("IC 95% bootstrap        : [",
-    round(ic_inf, 4), ";", round(ic_sup, 4), "]\n")
-cat("Magnitude               :", case_when(
-  gini_obs >= 0.6 ~ "Très forte concentration",
-  gini_obs >= 0.4 ~ "Forte concentration",
-  gini_obs >= 0.2 ~ "Concentration modérée",
-  TRUE            ~ "Distribution quasi-égale"
-), "\n")
+N_BOOT <- 2000
+gini_boot <- replicate(N_BOOT, gini(sample(montees_par_arret$montees_totales, replace = TRUE)))
+ic_gini <- quantile(gini_boot, c(0.025, 0.975))
 
+vie_arrets <- journalier %>%
+  filter(!is.na(arret)) %>%
+  group_by(arret) %>%
+  summarise(debut = min(date), fin = max(date), .groups = "drop")
+n_disparus <- sum(vie_arrets$fin < D_DEBUT_12M)
+n_apparus  <- sum(vie_arrets$debut >= D_DEBUT_12M)
 
-# ── 4. COURBE DE LORENZ ─────────────────────────────────────
-# Visualisation de la concentration
+cat("\n=== T-007 : CONCENTRATION DU TRAFIC ===\n")
+cat("Unité : lieu d'arrêt (nom d'arrêt, tous quais confondus)\n")
+cat("Fenêtre :", format(D_DEBUT_12M), "à", format(DATE_COUPURE), "\n")
+cat("Lieux d'arrêt :", nrow(montees_par_arret), "\n")
+cat("Gini :", round(gini_obs, 4),
+    "| IC 95% bootstrap [", round(ic_gini[1], 4), ";", round(ic_gini[2], 4), "]\n")
+cat("Les", n_top10, "lieux d'arrêt les plus fréquentés (10 %) concentrent",
+    round(part_top10, 1), "% des montées.\n")
+cat("\nRobustesse, période complète du journalier (",
+    format(min(journalier$date)), "à", format(DATE_COUPURE), ") :\n")
+cat("  lieux d'arrêt :", nrow(ctot$donnees), "| Gini :", round(ctot$gini, 4),
+    "| part des 10 % :", round(ctot$part_top10, 1), "%\n")
+cat("  dont", n_disparus, "sans montée sur les 12 derniers mois et",
+    n_apparus, "apparus pendant ces 12 mois.\n")
 
-lorenz_data <- montees_par_arret %>%
-  arrange(montees_totales) %>%
-  mutate(
-    pct_arrets  = row_number() / n() * 100,
-    pct_montees = cumsum(montees_totales) /
-      sum(montees_totales) * 100
-  )
-
-# Points clés pour annotation
-top10_pct <- lorenz_data %>%
-  filter(pct_arrets >= 90) %>%
-  slice(1) %>%
-  pull(pct_montees)
-
-p_lorenz <- ggplot(lorenz_data,
-                   aes(x = pct_arrets, y = pct_montees)) +
-  # Ligne d'égalité parfaite
-  geom_abline(slope = 1, intercept = 0,
-              linetype = "dashed", color = COL_NEUTRE,
-              linewidth = 0.6) +
-  # Courbe de Lorenz
-  geom_line(color = TPG_RED, linewidth = 1) +
-  geom_area(fill = TPG_RED, alpha = 0.15) +
-  
-  # Annotation top 10%
-  annotate("segment",
-           x = 90, xend = 90, y = 0, yend = top10_pct,
-           linetype = "dotted", color = COL_NEUTRE) +
-  annotate("segment",
-           x = 0, xend = 90, y = top10_pct, yend = top10_pct,
-           linetype = "dotted", color = COL_NEUTRE) +
-  annotate("text",
-           x = 45, y = top10_pct + 2,
-           label = paste0("10% des arrêts = ",
-                          round(100 - top10_pct, 1),
-                          "% du trafic restant\n",
-                          "90% des arrêts = ",
-                          round(top10_pct, 1), "% du trafic"),
-           size = 3, color = COL_REF, hjust = 0) +
-  
-  # Gini dans le graphique
-  annotate("text", x = 5, y = 90,
-           label = paste0("Gini = ", round(gini_obs, 3),
-                          "\nIC 95% [",
-                          round(ic_inf, 3), " ; ",
-                          round(ic_sup, 3), "]"),
-           size = 3.2, color = TPG_RED, hjust = 0) +
-  
-  scale_x_continuous(labels = function(x) paste0(x, "%")) +
-  scale_y_continuous(labels = function(x) paste0(x, "%")) +
-  labs(
-    title    = "Courbe de Lorenz — Concentration du trafic TPG par arrêt",
-    subtitle = "Gini = 0.843 — très forte concentration",
-    x        = "% des arrêts (du moins au plus fréquenté)",
-    y        = "% cumulé des montées",
-    caption  = "Source : TPG Open Data | avr. 2023 → fév. 2026"
-  ) +
-  theme_tpg() +
-  theme(axis.text.x = element_text(angle = 0))
-
-print(p_lorenz)
-
-ggsave("../outputs/09_lorenz_concentration.png",
-       plot = p_lorenz, width = 10, height = 8, dpi = 150)
-
-# ── 5. TEST T-008 — CORRÉLATION FRÉQUENTATION × KM PRODUITS ─
-# Hypothèse : les lignes qui produisent le plus de km sont
-# aussi les plus fréquentées
-# Test : Pearson + Spearman (vérifier linéarité d'abord)
-
-# Agrégation par ligne — journalier
-montees_ligne <- journalier %>%
-  filter(!is.na(ligne)) %>%
-  group_by(ligne) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Agrégation par ligne — km_prod
-km_ligne <- km_prod %>%
-  filter(!is.na(ligne)) %>%
-  group_by(ligne) %>%
-  summarise(
-    km_totaux = sum(km_prod, na.rm = TRUE),
-    .groups   = "drop"
-  )
-
-# Jointure — DEC-001 : ligne en character dans les deux
-t008_data <- montees_ligne %>%
-  inner_join(km_ligne, by = "ligne")
-
-cat("Lignes en commun :", nrow(t008_data), "\n\n")
-
-# Corrélation Pearson et Spearman
-pearson  <- cor.test(t008_data$montees_totales,
-                     t008_data$km_totaux,
-                     method = "pearson")
-spearman <- cor.test(t008_data$montees_totales,
-                     t008_data$km_totaux,
-                     method = "spearman")
-
-cat("=== RÉSULTATS T-008 ===\n\n")
-cat("Pearson  r =", round(pearson$estimate, 3),
-    " p =", format(pearson$p.value, scientific = TRUE), "\n")
-cat("Spearman r =", round(spearman$estimate, 3),
-    " p =", format(spearman$p.value, scientific = TRUE), "\n")
-
-
-# Scatter plot fréquentation × km produits
-p_t008 <- ggplot(t008_data,
-                 aes(x = km_totaux / 1e6,
-                     y = montees_totales / 1e6)) +
-  geom_point(color = TPG_RED, alpha = 0.7, size = 2.5) +
-  geom_smooth(method = "lm", color = COL_REF,
-              linewidth = 0.8, se = TRUE, alpha = 0.15) +
-  
-  # Identifier les outliers notables
-  geom_text(data = t008_data %>%
-              filter(montees_totales > 2e7 |
-                       km_totaux > 3e6),
-            aes(label = ligne),
-            vjust = -0.8, size = 2.8, color = COL_REF) +
-  
-  annotate("text", x = max(t008_data$km_totaux / 1e6) * 0.05,
-           y = max(t008_data$montees_totales / 1e6) * 0.92,
-           label = paste0("Pearson r = ", round(pearson$estimate, 3),
-                          "\nSpearman r = ", round(spearman$estimate, 3),
-                          "\np < 10⁻³⁴"),
-           hjust = 0, size = 3.2, color = COL_REF) +
-  
-  labs(
-    title    = "Corrélation fréquentation × km produits par ligne",
-    subtitle = "Chaque point = une ligne TPG | avr. 2023 → fév. 2026",
-    x        = "Km produits (millions)",
-    y        = "Montées totales (millions)",
-    caption  = "Source : TPG Open Data"
-  ) +
-  theme_tpg() +
-  theme(axis.text.x = element_text(angle = 0))
-
-print(p_t008)
-
-ggsave("../outputs/09_correlation_km_montees.png",
-       plot = p_t008, width = 10, height = 8, dpi = 150)
-
-# Calcul efficience par ligne
-t008_data <- t008_data %>%
-  mutate(
-    montees_par_km = round(montees_totales / km_totaux, 1)
-  )
-
-cat("=== TOP 10 LIGNES LES PLUS EFFICIENTES ===\n")
-t008_data %>%
-  arrange(desc(montees_par_km)) %>%
-  head(10) %>%
-  dplyr::select(ligne, montees_totales, km_totaux, montees_par_km) %>%
-  mutate(montees_totales = round(montees_totales / 1e6, 2),
-         km_totaux = round(km_totaux / 1e6, 2)) %>%
-  print()
-
-cat("\n=== TOP 10 LIGNES LES MOINS EFFICIENTES ===\n")
-t008_data %>%
-  arrange(montees_par_km) %>%
-  head(10) %>%
-  dplyr::select(ligne, montees_totales, km_totaux, montees_par_km) %>%
-  mutate(montees_totales = round(montees_totales / 1e6, 2),
-         km_totaux = round(km_totaux / 1e6, 2)) %>%
-  print()
-
-
-# ── 6. TEST T-009 — IMPACT GRATUITÉ JEUNES (JAN 2025) ───────
-# Hypothèse : la fréquentation a augmenté après jan 2025
-# Méthode : comparer les mêmes mois avant et après
-# jan-fév 2024 vs jan-fév 2025 — contrôle saisonnalité
-# On utilise le mensuel pour avoir plus de mois comparables
-
-# Agrégation mensuelle globale
-mensuel_global <- mensuel %>%
-  group_by(date) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Périodes comparées — mêmes mois, années différentes
-avant <- mensuel_global %>%
-  filter(date >= as.Date("2024-01-01") &
-           date <= as.Date("2024-12-01"))
-
-apres <- mensuel_global %>%
-  filter(date >= as.Date("2025-01-01") &
-           date <= as.Date("2026-02-01"))
-
-cat("Période avant (2024)   : n =", nrow(avant), "mois\n")
-cat("Période après (2025+)  : n =", nrow(apres), "mois\n\n")
-
-# Statistiques
-cat("Médiane 2024  :", round(median(avant$montees_totales) / 1e6, 2), "M\n")
-cat("Médiane 2025+ :", round(median(apres$montees_totales) / 1e6, 2), "M\n")
-cat("Différence    :",
-    round((median(apres$montees_totales) -
-             median(avant$montees_totales)) /
-            median(avant$montees_totales) * 100, 1), "%\n\n")
-
-# Mann-Whitney bilatéral
-mw_t009 <- wilcox.test(
-  apres$montees_totales,
-  avant$montees_totales,
-  alternative = "greater",
-  conf.int    = TRUE,
-  conf.level  = 0.95
+enregistrer(
+  test_id = "T-007", script = "09_tests_statistiques.R",
+  methode = "Indice de Gini des montées par lieu d'arrêt, 12 derniers mois, IC bootstrap 2000 tirages",
+  n = nrow(montees_par_arret), statistique = NA, p_value = NA,
+  effet_nom = "Gini", effet = round(gini_obs, 4),
+  ic_inf = round(ic_gini[1], 4), ic_sup = round(ic_gini[2], 4),
+  note = paste0("Lieu d'arrêt = nom d'arrêt, tous quais confondus. Fenêtre ",
+                format(D_DEBUT_12M), " à ", format(DATE_COUPURE), ". ",
+                "10 % des lieux d'arrêt concentrent ", round(part_top10, 1), " % des montées. ",
+                "Période complète : Gini ", round(ctot$gini, 4), ", ",
+                nrow(ctot$donnees), " lieux, dont ", n_disparus, " sans montée sur 12 mois.")
 )
 
-cat("=== RÉSULTATS T-009 ===\n\n")
-cat("W       :", mw_t009$statistic, "\n")
-cat("p-value :", format(mw_t009$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(mw_t009$p.value < 0.05,
-                "Hausse significative post-gratuité",
-                "Pas de hausse significative détectée"), "\n")
+lorenz <- montees_par_arret %>%
+  mutate(pct_arrets = row_number() / n() * 100,
+         pct_montees = cumsum(montees_totales) / sum(montees_totales) * 100)
 
-# ── 7. BLOC DÉCISION FINAL — SCRIPT 09 ──────────────────────
+p_lorenz <- ggplot(lorenz, aes(x = pct_arrets, y = pct_montees)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+              color = COL_NEUTRE, linewidth = 0.6) +
+  geom_area(fill = ROUGE_PRINCIPAL, alpha = 0.15) +
+  geom_line(color = ROUGE_PRINCIPAL, linewidth = 1) +
+  annotate("text", x = 3, y = 88,
+           label = paste0("Gini = ", round(gini_obs, 3), "\nIC 95% [",
+                          round(ic_gini[1], 3), " ; ", round(ic_gini[2], 3), "]"),
+           size = 3.2, color = ROUGE_PRINCIPAL, hjust = 0) +
+  scale_x_continuous(labels = function(x) paste0(x, " %")) +
+  scale_y_continuous(labels = function(x) paste0(x, " %")) +
+  labs(title = "Concentration du trafic entre lieux d'arrêt",
+       subtitle = paste0("Courbe de Lorenz, ", format(D_DEBUT_12M, "%m.%Y"), " à ",
+                         format(DATE_COUPURE, "%m.%Y"), ", tous quais confondus.\n",
+                         "Les 10 % de lieux d'arrêt les plus fréquentés concentrent ",
+                         round(part_top10, 1), " % des montées."),
+       x = "Part cumulée des lieux d'arrêt", y = "Part cumulée des montées",
+       caption = SOURCE_TPG) +
+  theme_projet()
 
-# T-007 GINI : 0.843, IC [0.811 ; 0.872]
-# Très forte concentration — 10% des arrêts = 74.2% du trafic
-# 90% des arrêts = seulement 25.8% — réseau structurellement polarisé
+print(p_lorenz)
+ggsave(file.path(DIR_FIG, "09_lorenz_arrets.png"), p_lorenz, width = 9, height = 7, dpi = 150)
 
-# T-008 CORRÉLATION :
-# Pearson r=0.867, Spearman r=0.924 — très forte corrélation
-# Trams forment une droite parallèle au-dessus → efficience structurelle
-# du site propre prouvée graphiquement
-# Exclusions nécessaires pour analyse propre :
-#   - Lignes CX (courses scolaires spéciales) — ratio artificiel
-#   - Anciens Noctambus — biais de période
-# Ligne 17 : tram Annemasse-Bel-Air-Lancy-Pont-Rouge
-# (correction tracé — pas Cornavin-Onex-Bernex)
+# ── 3. T-008 : OFFRE ET FRÉQUENTATION PAR LIGNE ─────────────
+# NOTE S-13 : ce test est proche d'une tautologie. Une ligne qui
+# roule davantage transporte davantage : la corrélation mesure
+# surtout la taille des lignes. Elle est publiée comme description,
+# pas comme démonstration d'efficience.
+#
+# Fenêtre : 12 derniers mois, comme T-007. Sur toute la période, une
+# ligne qui a existé un an et une ligne qui a existé dix ans ont des
+# totaux proportionnels à leur durée de vie, ce qui gonfle le lien.
+#
+# Correction : des lignes changent de type (ligne_type_act) dans le
+# mensuel. Grouper par ligne ET type puis joindre les km par ligne
+# comptait leurs km deux fois. On groupe par ligne seule et on garde
+# le type du mois le plus récent.
+#
+# L'IC de rho est obtenu par bootstrap sur les lignes. L'IC publié
+# jusqu'ici était celui de Pearson, affiché à côté du rho de Spearman.
 
-# T-009 GRATUITÉ JEUNES :
-# p=0.137 — NON significatif
-# +4.6% descriptiblement mais non prouvé
-# Limite : n trop faible (12 vs 14 mois), facteurs confondants
-# Conclusion : signal positif, preuve formelle impossible avec
-# les données actuelles — à réévaluer en 2027 avec 2-3 ans de recul
+n_types_multiples <- mensuel %>%
+  distinct(ligne, ligne_type_act) %>%
+  count(ligne) %>%
+  filter(n > 1) %>%
+  nrow()
 
-ggsave("../outputs/09_correlation_km_montees.png",
-       plot = p_t008, width = 10, height = 8, dpi = 150)
+t008 <- mensuel %>%
+  filter(date >= floor_date(D_DEBUT_12M, "month")) %>%
+  group_by(ligne) %>%
+  summarise(montees = sum(nb_de_montees, na.rm = TRUE),
+            ligne_type_act = ligne_type_act[which.max(date)], .groups = "drop") %>%
+  inner_join(km_prod %>%
+               filter(date >= D_DEBUT_12M) %>%
+               mutate(ligne = as.character(ligne)) %>%
+               group_by(ligne) %>%
+               summarise(km = sum(km_prod, na.rm = TRUE), .groups = "drop"),
+             by = "ligne") %>%
+  filter(montees > 0, km > 0)
 
-message("Script 09 terminé — tous les tests complétés.")
+pearson  <- cor.test(t008$montees, t008$km, method = "pearson")
+spearman <- suppressWarnings(cor.test(t008$montees, t008$km, method = "spearman"))
 
-# ── AM-002 — CHOW TEST DÉCLIN SCOLAIRE ──────────────────────
-# Hypothèse : la tendance SCOLAIRE 2016-2019 est significativement
-# différente de la tendance 2020-2025
-# On teste si le COVID a causé un changement de régime permanent
-# sur les lignes scolaires — pas juste un choc transitoire
+rho_boot <- replicate(N_BOOT, {
+  i <- sample(nrow(t008), replace = TRUE)
+  cor(t008$montees[i], t008$km[i], method = "spearman")
+})
+ic_rho <- quantile(rho_boot, c(0.025, 0.975))
 
-# Agrégation mensuelle SCOLAIRE uniquement
-scolaire_global <- mensuel %>%
+cat("\n=== T-008 : OFFRE ET FRÉQUENTATION PAR LIGNE ===\n")
+cat("Fenêtre :", format(D_DEBUT_12M), "à", format(DATE_COUPURE), "\n")
+cat("Lignes :", nrow(t008), "\n")
+cat("Lignes ayant changé de type sur toute la période :", n_types_multiples, "\n")
+cat("Spearman rho =", round(spearman$estimate, 3),
+    "| IC 95% bootstrap [", round(ic_rho[1], 3), ";", round(ic_rho[2], 3), "]\n")
+cat("Pour comparaison, Pearson r =", round(pearson$estimate, 3),
+    "| IC 95% [", round(pearson$conf.int[1], 3), ";", round(pearson$conf.int[2], 3), "]\n")
+cat("Lecture : lien fort mais attendu. Plus de kilomètres produits\n")
+cat("implique mécaniquement plus de montées (S-13).\n")
+
+enregistrer(
+  test_id = "T-008", script = "09_tests_statistiques.R",
+  methode = "Corrélation de Spearman entre km produits et montées par ligne, 12 derniers mois, IC bootstrap",
+  n = nrow(t008), statistique = NA, p_value = NA,
+  effet_nom = "Spearman rho", effet = round(as.numeric(spearman$estimate), 3),
+  ic_inf = round(ic_rho[1], 3), ic_sup = round(ic_rho[2], 3),
+  note = paste0("Relation en partie tautologique (S-13). Publiée comme description. ",
+                "Pearson r = ", round(pearson$estimate, 3), ". ",
+                n_types_multiples, " lignes à type multiple, comptées une fois.")
+)
+
+p_t008 <- ggplot(t008, aes(x = km, y = montees, color = ligne_type_act)) +
+  geom_point(size = 2, alpha = 0.8) +
+  scale_color_manual(values = PALETTE_TYPES, name = NULL) +
+  scale_x_log10(labels = label_number(scale_cut = cut_short_scale())) +
+  scale_y_log10(labels = label_number(scale_cut = cut_short_scale())) +
+  labs(title = "Offre et fréquentation par ligne",
+       subtitle = paste0("Échelles logarithmiques, ", format(D_DEBUT_12M, "%m.%Y"), " à ",
+                         format(DATE_COUPURE, "%m.%Y"), ". Spearman rho = ",
+                         round(spearman$estimate, 3), " sur ", nrow(t008), " lignes."),
+       x = "Kilomètres produits", y = "Montées", caption = SOURCE_TPG) +
+  theme_projet() + theme(legend.position = "bottom")
+
+print(p_t008)
+ggsave(file.path(DIR_FIG, "09_offre_frequentation.png"), p_t008, width = 10, height = 8, dpi = 150)
+
+
+# ── 4. T-009 : GRATUITÉ JEUNES DE JANVIER 2025 ──────────────
+# S-07 : la version d'avril comparait douze mois de 2024 à
+# quatorze mois allant de janvier 2025 à février 2026, sans
+# appariement, avec un test unilatéral alors que la documentation
+# annonçait un test bilatéral.
+#
+# Trois corrections :
+#   1. appariement mois à mois, douze paires contre douze ;
+#   2. année témoin 2023 vers 2024, sans gratuité, pour disposer
+#      d'un point de comparaison ;
+#   3. normalisation par les kilomètres produits, pour séparer ce
+#      qui vient de l'offre de ce qui vient de la demande.
+#
+# CONFONDANT NON ÉLIMINABLE : l'offre a été renforcée le
+# 15 décembre 2024, seize jours avant la gratuité. Avec des
+# données mensuelles, les deux événements ne peuvent pas être
+# séparés dans le temps. La normalisation par les kilomètres
+# atténue le problème sans le résoudre.
+#
+# PORTÉE : la mesure vise les jeunes, qui ne représentent qu'une
+# fraction des usagers. Un effet réel sur cette population peut
+# rester invisible dans le total du réseau. L'absence d'effet
+# global ne contredit donc pas les enquêtes menées auprès des
+# bénéficiaires.
+
+agreger <- function(df_m, df_km, exclure = character(0)) {
+  a <- df_m %>% filter(!ligne %in% exclure) %>%
+    mutate(an = year(date), mn = month(date)) %>%
+    group_by(an, mn) %>%
+    summarise(montees = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+  b <- df_km %>% filter(!ligne %in% exclure) %>%
+    mutate(an = year(date), mn = month(date)) %>%
+    group_by(an, mn) %>%
+    summarise(km = sum(km_prod, na.rm = TRUE), .groups = "drop")
+  inner_join(a, b, by = c("an", "mn")) %>% mutate(par_km = montees / km)
+}
+
+comparer_annees <- function(don, an_ref, an_test) {
+  a <- don %>% filter(an == an_ref)
+  b <- don %>% filter(an == an_test)
+  cm <- inner_join(a, b, by = "mn", suffix = c("_ref", "_test"))
+  w_br <- wilcox.test(cm$montees_test, cm$montees_ref, paired = TRUE, conf.int = TRUE)
+  w_km <- wilcox.test(cm$par_km_test,  cm$par_km_ref,  paired = TRUE, conf.int = TRUE)
+  data.frame(
+    comparaison   = paste0(an_ref, " vers ", an_test),
+    n_paires      = nrow(cm),
+    var_montees   = round(100 * (median(cm$montees_test) / median(cm$montees_ref) - 1), 2),
+    var_km        = round(100 * (median(cm$km_test)      / median(cm$km_ref)      - 1), 2),
+    var_par_km    = round(100 * (median(cm$par_km_test)  / median(cm$par_km_ref)  - 1), 2),
+    p_montees     = round(w_br$p.value, 4),
+    p_par_km      = round(w_km$p.value, 4)
+  )
+}
+
+don <- agreger(mensuel, km_prod)
+t009 <- bind_rows(comparer_annees(don, 2023, 2024),
+                  comparer_annees(don, 2024, 2025))
+
+cat("\n=== T-009 : GRATUITÉ JEUNES ===\n")
+cat("Comparaisons appariées mois à mois, variations de médiane en %\n")
+print(as.data.frame(t009))
+
+effet_temoin <- t009$var_par_km[t009$comparaison == "2023 vers 2024"]
+effet_test   <- t009$var_par_km[t009$comparaison == "2024 vers 2025"]
+effet_net    <- round(effet_test - effet_temoin, 2)
+
+cat("\n--- Lecture ---\n")
+cat("Montées brutes 2024 vers 2025 :", t009$var_montees[2], "%\n")
+cat("Kilomètres produits           :", t009$var_km[2], "%\n")
+cat("Montées par kilomètre         :", effet_test, "%\n")
+cat("La hausse des montées suit celle de l'offre.\n\n")
+cat("Année témoin 2023 vers 2024, montées par kilomètre :", effet_temoin, "%\n")
+cat("Écart entre l'année de la gratuité et l'année témoin :", effet_net, "points\n")
+cat("C'est l'ordre de grandeur de ce qu'on peut attribuer à la période\n")
+cat("de la gratuité, renforcement d'offre du 15.12.2024 compris.\n")
+
+# Robustesse : lignes 301 et 302 (voir Q-04, incohérence entre le
+# journalier et le mensuel en janvier et février 2025).
+don_sans <- agreger(mensuel, km_prod, exclure = c("301", "302"))
+t009_sans <- comparer_annees(don_sans, 2024, 2025)
+
+cat("\n--- Robustesse (S-14) : sans les lignes 301 et 302 ---\n")
+cat("Montées par kilomètre :", t009_sans$var_par_km, "% contre",
+    effet_test, "% avec ces lignes.\n")
+cat("L'anomalie de ces deux lignes ne change pas la conclusion.\n")
+
+# Par type de ligne
+types <- c("PRINCIPAL", "SECONDAIRE", "GLCT", "SCOLAIRE")
+par_type <- bind_rows(lapply(types, function(t) {
+  d <- agreger(mensuel %>% filter(ligne_type_act == t),
+               km_prod %>% filter(ligne_type_act == t))
+  if (nrow(d %>% filter(an == 2024)) < 6 || nrow(d %>% filter(an == 2025)) < 6) return(NULL)
+  bind_rows(comparer_annees(d, 2023, 2024), comparer_annees(d, 2024, 2025)) %>%
+    mutate(type = t, .before = 1)
+}))
+
+cat("\n--- Par type de ligne ---\n")
+print(as.data.frame(par_type %>% select(type, comparaison, var_montees, var_km, var_par_km)))
+cat("\nLes écarts en montées brutes suivent largement les écarts en\n")
+cat("kilomètres produits. Une fois l'offre prise en compte, les\n")
+cat("variations se réduisent fortement.\n")
+
+# S-34 (1) : DISTRIBUTION PLACEBO.
+# Même calcul pour toutes les paires d'années consécutives
+# complètes. Les paires qui touchent 2020, 2021 ou 2022 (COVID et
+# remontée, dernier segment Bai-Perron à partir de 03.2023) sont
+# exclues. Les autres paires sans gratuité forment la distribution
+# de référence : si l'année de la gratuité n'en sort pas, rien ne
+# la distingue d'une fluctuation ordinaire d'une année à l'autre.
+
+annees_completes <- don %>% count(an) %>% filter(n == 12) %>% pull(an)
+paires <- data.frame(ref = annees_completes) %>%
+  mutate(test = ref + 1) %>%
+  filter(test %in% annees_completes)
+
+placebo <- bind_rows(lapply(seq_len(nrow(paires)), function(i)
+  comparer_annees(don, paires$ref[i], paires$test[i]) %>%
+    mutate(ref = paires$ref[i], test = paires$test[i]))) %>%
+  mutate(statut = case_when(ref == 2024                  ~ "gratuite",
+                            ref >= 2019 & ref <= 2022    ~ "exclue (COVID, remontee)",
+                            TRUE                          ~ "placebo"))
+
+pl <- placebo %>% filter(statut == "placebo")
+rang_gratuite <- sum(pl$var_par_km >= effet_test) + 1
+
+cat("\n=== S-34 : T-009, DISTRIBUTION PLACEBO ===\n")
+cat("Montées par km, variation d'une année à la suivante (%) :\n")
+print(as.data.frame(placebo %>% select(comparaison, var_montees, var_km, var_par_km, statut)),
+      row.names = FALSE)
+cat("\nPaires placebo :", nrow(pl), "| plage : de", min(pl$var_par_km), "à",
+    max(pl$var_par_km), "%\n")
+cat("Année de la gratuité :", effet_test, "% | rang", rang_gratuite, "sur",
+    nrow(pl) + 1, "(1 = plus forte hausse)\n")
+if (effet_test >= min(pl$var_par_km) && effet_test <= max(pl$var_par_km)) {
+  cat("L'année de la gratuité tombe à l'intérieur de la plage des années\n")
+  cat("sans gratuité : rien ne la distingue d'une fluctuation ordinaire.\n")
+} else {
+  cat("L'année de la gratuité sort de la plage des années sans gratuité.\n")
+}
+cat("Avec", nrow(pl), "paires placebo, aucune p-value n'est calculée : la\n")
+cat("distribution sert d'échelle, pas de test.\n")
+
+# S-34 (2) : EFFET DE COMPOSITION.
+# La variation des montées/km du réseau mélange deux choses :
+# l'évolution à l'intérieur de chaque type de ligne, et le
+# déplacement des km entre types dont les montées/km diffèrent.
+# Décomposition sur les totaux annuels (poids moyens des deux années) :
+#   intra     = somme des poids moyens x variation des montées/km du type
+#   structure = somme des montées/km moyennes x variation des poids
+# Le reste vient des types présents une seule des deux années.
+
+decomposer <- function(y0, y1) {
+  tot <- function(y) {
+    m <- mensuel %>% filter(year(date) == y) %>% group_by(type = ligne_type_act) %>%
+      summarise(M = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+    k <- km_prod %>% filter(year(date) == y) %>% group_by(type = ligne_type_act) %>%
+      summarise(K = sum(km_prod, na.rm = TRUE), .groups = "drop")
+    full_join(m, k, by = "type") %>% mutate(across(c(M, K), ~ coalesce(., 0)))
+  }
+  a <- full_join(tot(y0), tot(y1), by = "type", suffix = c("0", "1")) %>%
+    mutate(across(-type, ~ coalesce(., 0)),
+           w0 = K0 / sum(K0), w1 = K1 / sum(K1),
+           r0 = ifelse(K0 > 0, M0 / K0, NA), r1 = ifelse(K1 > 0, M1 / K1, NA))
+  R0 <- sum(a$M0) / sum(a$K0); R1 <- sum(a$M1) / sum(a$K1)
+  b <- a %>% filter(K0 > 0, K1 > 0)
+  intra  <- sum((b$w0 + b$w1) / 2 * (b$r1 - b$r0))
+  struct <- sum((b$r0 + b$r1) / 2 * (b$w1 - b$w0))
+  list(detail = a %>% transmute(type, part_km_avant = round(100 * w0, 1),
+                                part_km_apres = round(100 * w1, 1),
+                                var_montees_km = round(100 * (r1 / r0 - 1), 2)),
+       resume = data.frame(comparaison = paste0(y0, " vers ", y1),
+                           total = round(100 * (R1 / R0 - 1), 2),
+                           intra = round(100 * intra / R0, 2),
+                           structure = round(100 * struct / R0, 2),
+                           types_entrants_sortants = round(100 * ((R1 - R0) - intra - struct) / R0, 2)))
+}
+
+dec_temoin <- decomposer(2023, 2024)
+dec_test   <- decomposer(2024, 2025)
+
+cat("\n=== S-34 : T-009, EFFET DE COMPOSITION (totaux annuels) ===\n")
+cat("Variation des montées par km du réseau, en %, décomposée :\n")
+print(bind_rows(dec_temoin$resume, dec_test$resume), row.names = FALSE)
+cat("\nDetail 2024 vers 2025 par type :\n")
+print(as.data.frame(dec_test$detail), row.names = FALSE)
+ecart_intra <- round(dec_test$resume$intra - dec_temoin$resume$intra, 2)
+cat("\nLecture : sur les totaux annuels, les montées par km du réseau\n")
+cat("varient de", dec_test$resume$total, "% en 2025. L'effet de structure vaut",
+    dec_test$resume$structure, "point(s) :\n")
+cat("les km se sont déplacés vers des types de lignes à moins de montées par\n")
+cat("km. À type de ligne constant, la variation est de", dec_test$resume$intra,
+    "%, contre", dec_temoin$resume$intra, "%\n")
+cat("l'année témoin, soit un écart de", ecart_intra, "point. Même conclusion que\n")
+cat("le placebo : pas d'effet détectable sur le total du réseau.\n")
+
+enregistrer(
+  test_id = "T-009", script = "09_tests_statistiques.R",
+  methode = "Wilcoxon apparié mois à mois, montées par km, année de la gratuité contre année témoin",
+  n = sum(t009$n_paires), statistique = NA, p_value = NA,
+  effet_nom = "écart de variation des montées/km contre année témoin (points)",
+  effet = effet_net,
+  note = paste0("2024 vers 2025 : montées ", t009$var_montees[2], " %, km ",
+                t009$var_km[2], " %, montées/km ", effet_test, " %. ",
+                "Témoin 2023 vers 2024 : ", effet_temoin, " %. ",
+                "Renforcement d'offre du 15.12.2024 non séparable (S-07). ",
+                "Sans lignes 301 et 302 : ", t009_sans$var_par_km, " %. ",
+                "Placebo (S-34), ", nrow(pl), " paires sans gratuité hors COVID : de ",
+                min(pl$var_par_km), " à ", max(pl$var_par_km), " %, gratuité rang ",
+                rang_gratuite, " sur ", nrow(pl) + 1, ". Composition (totaux annuels) : ",
+                "intra-type ", dec_test$resume$intra, " % contre ", dec_temoin$resume$intra,
+                " % en année témoin, structure ", dec_test$resume$structure, " point(s).")
+)
+
+# ── 5. AM-002 : LIGNES SCOLAIRES ────────────────────────────
+# S-11 : avant toute lecture en termes de comportement, il faut
+# savoir ce que le périmètre a fait. Une baisse de fréquentation
+# sur un réseau qui rétrécit n'est pas une baisse d'usage.
+
+scolaire_perimetre <- mensuel %>%
+  filter(ligne_type_act == "SCOLAIRE") %>%
+  mutate(annee = year(date)) %>%
+  group_by(annee) %>%
+  summarise(mois_avec_service = n_distinct(date),
+            lignes = n_distinct(ligne),
+            arrets = n_distinct(arret),
+            montees_milliers = round(sum(nb_de_montees, na.rm = TRUE) / 1e3),
+            .groups = "drop") %>%
+  filter(annee <= if (month(DATE_COUPURE) < 12) year(DATE_COUPURE) - 1 else year(DATE_COUPURE))
+
+ref <- scolaire_perimetre %>% filter(annee == min(annee))
+scolaire_perimetre <- scolaire_perimetre %>%
+  mutate(indice_montees = round(100 * montees_milliers / ref$montees_milliers),
+         indice_arrets  = round(100 * arrets / ref$arrets),
+         montees_par_arret = round(1000 * montees_milliers / arrets))
+
+cat("\n=== AM-002 : LIGNES SCOLAIRES, PÉRIMÈTRE (S-11) ===\n")
+print(as.data.frame(scolaire_perimetre))
+
+derniere <- scolaire_perimetre %>% slice_max(annee, n = 1)
+cat("\nDe", min(scolaire_perimetre$annee), "à", derniere$annee, ":\n")
+cat("  montées        :", derniere$indice_montees - 100, "%\n")
+cat("  arrêts desservis:", derniere$indice_arrets - 100, "%\n")
+cat("  montées par arrêt desservi :",
+    round(100 * derniere$montees_par_arret /
+            scolaire_perimetre$montees_par_arret[scolaire_perimetre$annee == min(scolaire_perimetre$annee)] - 100), "%\n")
+cat("La baisse des montées suit d'abord la réduction du périmètre.\n")
+
+# S-06 : la série scolaire n'est pas continue. Les mois sans
+# service (juillet, et avril 2020) sont absents du fichier. Avec
+# ts(), chaque mois manquant décale toutes les dates suivantes.
+
+scolaire_mensuel <- mensuel %>%
   filter(ligne_type_act == "SCOLAIRE") %>%
   group_by(date) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
+  summarise(montees = sum(nb_de_montees, na.rm = TRUE),
+            arrets = n_distinct(arret), .groups = "drop") %>%
   arrange(date)
 
-cat("Série SCOLAIRE :", nrow(scolaire_global), "mois\n")
-cat("De :", format(min(scolaire_global$date)),
-    "à :", format(max(scolaire_global$date)), "\n\n")
+attendus <- seq(min(scolaire_mensuel$date), max(scolaire_mensuel$date), by = "month")
+manquants <- attendus[!attendus %in% scolaire_mensuel$date]
 
-# Série temporelle
-ts_scolaire <- ts(scolaire_global$montees_totales,
-                  start = c(2016, 1), frequency = 12)
-
-# Position mars 2020 dans la série
-pos_covid_sc <- which(scolaire_global$date == as.Date("2020-03-01"))
-cat("Position COVID dans série SCOLAIRE :", pos_covid_sc, "\n\n")
-
-# Test de Chow — rupture en mars 2020
-cat("--- CHOW TEST SCOLAIRE (mars 2020) ---\n")
-chow_sc <- sctest(ts_scolaire ~ 1,
-                  type  = "Chow",
-                  point = pos_covid_sc)
-cat("F =", round(chow_sc$statistic, 3), "\n")
-cat("p =", format(chow_sc$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(chow_sc$p.value < 0.05,
-                "Rupture structurelle SCOLAIRE prouvée — changement de régime",
-                "Pas de rupture détectée"), "\n\n")
-
-# Bai-Perron — combien de ruptures et quand ?
-cat("--- BAI-PERRON SCOLAIRE ---\n")
-bp_sc      <- breakpoints(ts_scolaire ~ 1)
-bp_sc_sum  <- summary(bp_sc)
-bic_sc     <- bp_sc_sum$RSS["BIC", ]
-n_opt_sc   <- as.integer(names(which.min(bic_sc)))
-
-cat("BIC par nombre de ruptures :\n")
-print(round(bic_sc, 1))
-cat("Nombre optimal :", n_opt_sc, "\n")
-
-if (n_opt_sc > 0) {
-  bp_sc_opt      <- breakpoints(bp_sc, breaks = n_opt_sc)
-  dates_sc_rup   <- scolaire_global$date[bp_sc_opt$breakpoints]
-  cat("Dates des ruptures :\n")
-  for (i in seq_along(dates_sc_rup)) {
-    cat(" ", i, ":", format(dates_sc_rup[i], "%B %Y"), "\n")
-  }
+cat("\n=== AM-002 : CONTINUITÉ DE LA SÉRIE (S-06) ===\n")
+cat("Mois présents :", nrow(scolaire_mensuel), "sur", length(attendus), "attendus\n")
+cat("Mois manquants :", length(manquants), "\n")
+if (length(manquants) > 0) {
+  print(format(manquants, "%Y-%m"))
+  cat("Répartition par numéro de mois :\n")
+  print(table(month(manquants)))
+  idx_reel <- which(scolaire_mensuel$date == D_COVID)
+  date_fausse <- min(scolaire_mensuel$date) %m+% months(idx_reel - 1)
+  cat("\nConséquence concrète : mars 2020 occupe la position", idx_reel,
+      "de la série.\n")
+  cat("ts(start = c(2016, 1)) attribue à cette position la date",
+      format(date_fausse, "%Y-%m"), ".\n")
+  cat("Le test de Chow d'avril, censé porter sur mars 2020, portait\n")
+  cat("donc sur une autre date. Résultat invalide.\n")
 }
 
-# ── BLOC DÉCISION AM-002 ─────────────────────────────────────
+# Série complétée : un mois sans service scolaire vaut zéro montée.
+# C'est la réalité du service, et cela rend la série continue.
+scolaire_complet <- data.frame(date = attendus) %>%
+  left_join(scolaire_mensuel, by = "date") %>%
+  mutate(montees = ifelse(is.na(montees), 0, montees))
 
-# RÉSULTATS :
-# Chow F=29.591, p=3.26×10⁻⁷ → rupture structurelle SCOLAIRE prouvée
-# Bai-Perron m=1 optimal — rupture unique : juin 2021
-#
-# CE QU'ON PEUT AFFIRMER :
-# - Le COVID a causé un changement de régime PERMANENT sur SCOLAIRE
-# - Contrairement au réseau global (T-006 p=0.506), SCOLAIRE n'a PAS récupéré
-# - La rupture est en juin 2021 (sortie de crise) pas mars 2020 (confinement)
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - La cause : nouvelles habitudes familiales ? Démographie ?
-#   Requalification de lignes ? Les données ne permettent pas de trancher.
-#
-# ANGLE NARRATIF FORT :
-# "Le COVID a durablement modifié les habitudes de transport scolaire
-# à Genève — une rupture prouvée statistiquement que le réseau global
-# ne montre pas. Les familles ne sont pas revenues aux transports publics
-# pour emmener leurs enfants à l'école."
-#
-# IMPLICATION POLITIQUE :
-# La gratuité jeunes (jan 2025) est une réponse potentielle à ce déclin.
-# T-009 sur SCOLAIRE spécifiquement — à faire dans AM-003.
+ts_sc <- ts(scolaire_complet$montees,
+            start = c(year(min(attendus)), month(min(attendus))), frequency = 12)
+stl_sc <- stl(ts_sc, s.window = "periodic", t.window = 13, robust = TRUE)
+des_sc <- as.numeric(ts_sc) - as.numeric(stl_sc$time.series[, "seasonal"])
 
-message("AM-002 complété.")
+bp_sc  <- breakpoints(ts(des_sc, start = c(year(min(attendus)), month(min(attendus))),
+                         frequency = 12) ~ 1)
+bic_sc <- summary(bp_sc)$RSS["BIC", ]
+m_sc   <- as.integer(names(which.min(bic_sc)))
 
-
-# ── AM-003 — T-009 PAR TYPE DE LIGNE ────────────────────────
-# T-009 global était non significatif (p=0.137) — trop agrégé
-# On refait par type de ligne — l'effet gratuité devrait être
-# visible sur SCOLAIRE et SECONDAIRE, pas sur PRINCIPAL
-
-# Agrégation mensuelle par type de ligne
-mensuel_type_mois <- mensuel %>%
-  mutate(ligne_type_act = case_when(
-    ligne_type_act %in% c("REGIONAL", "REGIONAL COMMUNE") ~ "SECONDAIRE",
-    TRUE ~ ligne_type_act
-  )) %>%
-  filter(ligne_type_act %in% c("PRINCIPAL", "SECONDAIRE",
-                               "SCOLAIRE", "GLCT")) %>%
-  group_by(date, ligne_type_act) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-cat("=== AM-003 — T-009 PAR TYPE DE LIGNE ===\n\n")
-
-for (type in c("SCOLAIRE", "SECONDAIRE", "PRINCIPAL", "GLCT")) {
-  
-  avant <- mensuel_type_mois %>%
-    filter(ligne_type_act == type,
-           date >= as.Date("2024-01-01") &
-             date <= as.Date("2024-12-01"))
-  
-  apres <- mensuel_type_mois %>%
-    filter(ligne_type_act == type,
-           date >= as.Date("2025-01-01") &
-             date <= as.Date("2026-02-01"))
-  
-  if (nrow(avant) < 3 | nrow(apres) < 3) next
-  
-  mw <- wilcox.test(apres$montees_totales,
-                    avant$montees_totales,
-                    alternative = "greater")
-  
-  diff_pct <- round((median(apres$montees_totales) -
-                       median(avant$montees_totales)) /
-                      median(avant$montees_totales) * 100, 1)
-  
-  cat(sprintf("%-12s : diff=%+.1f%%  p=%.3f  %s\n",
-              type, diff_pct, mw$p.value,
-              ifelse(mw$p.value < 0.05, "✅ SIG.", "❌ non sig.")))
+cat("\n=== AM-002 : RUPTURES, SÉRIE COMPLÉTÉE ET DÉSAISONNALISÉE ===\n")
+cat("Mois sans service complétés par zéro :", length(manquants), "\n")
+cat("BIC :", paste(names(bic_sc), round(bic_sc, 1), sep = " = ", collapse = " | "), "\n")
+cat("Ruptures retenues :", m_sc, "\n")
+if (m_sc > 0) {
+  dates_sc <- scolaire_complet$date[breakpoints(bp_sc, breaks = m_sc)$breakpoints]
+  cat("Dates :", paste(format(dates_sc, "%Y-%m"), collapse = " | "), "\n")
+} else {
+  dates_sc <- as.Date(character(0))
 }
+cat("\nCes ruptures portent sur une série non corrigée du périmètre.\n")
+cat("Le tableau de périmètre ci-dessus reste la lecture principale.\n")
 
-# ── BLOC DÉCISION AM-003 ─────────────────────────────────────
+enregistrer(
+  test_id = "AM-002", script = "09_tests_statistiques.R",
+  methode = "Périmètre scolaire par année et ruptures sur série complétée et désaisonnalisée",
+  n = nrow(scolaire_complet), statistique = NA, p_value = NA,
+  effet_nom = "variation des montées par arrêt desservi (%)",
+  effet = round(100 * derniere$montees_par_arret /
+                  scolaire_perimetre$montees_par_arret[scolaire_perimetre$annee == min(scolaire_perimetre$annee)] - 100),
+  note = paste0("Montées ", derniere$indice_montees - 100, " %, arrêts ",
+                derniere$indice_arrets - 100, " %. ",
+                length(manquants), " mois sans service complétés par zéro (S-06). ",
+                "Chow d'avril invalide : date décalée. Ruptures : ",
+                ifelse(m_sc > 0, paste(format(dates_sc, "%Y-%m"), collapse = ", "), "aucune"), ".")
+)
 
-# RÉSULTATS T-009 PAR TYPE :
-# SCOLAIRE   : -9.7%  p=0.455 — non sig. (déclin structurel continue)
-# SECONDAIRE : +13.1% p=0.004 — ✅ SIG. (effet gratuité prouvé)
-# PRINCIPAL  : +3.7%  p=0.280 — non sig.
-# GLCT       : +2.9%  p=0.231 — non sig.
-#
-# CE QU'ON PEUT AFFIRMER :
-# - La gratuité jeunes a augmenté significativement la fréquentation
-#   des lignes SECONDAIRE (+13.1%, p=0.004)
-# - L'effet n'est pas visible sur PRINCIPAL, GLCT ou SCOLAIRE
-# - La gratuité n'a pas inversé le déclin des lignes SCOLAIRE
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - Que SECONDAIRE +13.1% est dû uniquement à la gratuité
-#   (facteurs confondants : croissance naturelle, nouveaux services)
-# - Que SCOLAIRE aurait baissé sans gratuité (n insuffisant)
-#
-# RÉCONCILIATION AVEC T-009 GLOBAL :
-# T-009 global p=0.137 — l'effet SECONDAIRE (+13.1%) est dilué
-# dans la masse du réseau PRINCIPAL. La segmentation révèle
-# ce que l'agrégation cachait.
-#
-# ANGLE NARRATIF :
-# "La gratuité jeunes a trouvé son public — les 18-24 ans en formation
-# qui utilisent les lignes secondaires pour accéder aux hautes écoles.
-# Un effet ciblé, prouvé statistiquement, invisible sans segmentation."
+# ── 6. FIGURE : SCOLAIRE, MONTÉES ET PÉRIMÈTRE ──────────────
 
-message("AM-003 complété.")
+sc_long <- scolaire_perimetre %>%
+  select(annee, indice_montees, indice_arrets) %>%
+  pivot_longer(-annee, names_to = "serie", values_to = "indice") %>%
+  mutate(serie = recode(serie,
+                        indice_montees = "Montées",
+                        indice_arrets  = "Arrêts desservis"))
 
-# NOTE MÉTHODOLOGIQUE AM-003 — PRINCIPAL :
-# La non-significativité sur PRINCIPAL n'implique pas l'absence d'effet.
-# Les jeunes genevois en ville utilisent les lignes PRINCIPAL (1, 3, 5, 6...)
-# mais l'effet est dilué dans une variabilité mensuelle de ~2-3M montées.
-# Puissance statistique insuffisante avec seulement 12 vs 14 mois.
-# Un effet réel de +3-5% sur PRINCIPAL représente pourtant ~500-800k
-# montées/mois supplémentaires — opérationnellement significatif
-# même si statistiquement non prouvable avec les données actuelles.
-# À réévaluer avec 3 ans de recul (2027-2028).
+p_scolaire <- ggplot(sc_long, aes(x = annee, y = indice, color = serie)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = COL_REF, linewidth = 0.5) +
+  geom_line(linewidth = 1) + geom_point(size = 2) +
+  scale_color_manual(values = c("Montées" = ROUGE_PRINCIPAL,
+                                "Arrêts desservis" = COL_LEMAN), name = NULL) +
+  scale_x_continuous(breaks = scolaire_perimetre$annee) +
+  labs(title = "Lignes scolaires : fréquentation et périmètre",
+       subtitle = paste0("Indice 100 en ", min(scolaire_perimetre$annee),
+                         ". La baisse des montées suit celle du nombre d'arrêts desservis."),
+       x = NULL, y = paste0("Indice (", min(scolaire_perimetre$annee), " = 100)"),
+       caption = SOURCE_TPG) +
+  theme_projet() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
+print(p_scolaire)
+ggsave(file.path(DIR_FIG, "09_scolaire_perimetre.png"), p_scolaire, width = 10, height = 6, dpi = 150)
+message("Figures enregistrées.")
 
-# ── AM-004 — SENSIBILITÉ STL ─────────────────────────────────
-# T-004b utilisait s.window = "periodic" — saisonnalité rigide
-# On teste avec s.window = 7 et s.window = 13 (plus flexibles)
-# Si les conclusions changent → nos résultats sont fragiles
-# Si elles restent stables → on peut affirmer la robustesse
+# ── 7. SAUVEGARDE ───────────────────────────────────────────
 
-mensuel_global <- mensuel %>%
-  group_by(date) %>%
-  summarise(montees_totales = sum(nb_de_montees, na.rm = TRUE),
-            .groups = "drop") %>%
-  arrange(date)
+write.csv(t009,               file.path(DIR_RES, paste0("09_T009_gratuite_",   SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(par_type,           file.path(DIR_RES, paste0("09_T009_par_type_",   SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(scolaire_perimetre, file.path(DIR_RES, paste0("09_AM002_perimetre_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(t008,               file.path(DIR_RES, paste0("09_T008_lignes_",     SNAPSHOT_ID, ".csv")), row.names = FALSE)
 
-ts_mensuel <- ts(mensuel_global$montees_totales,
-                 start = c(2016, 1), frequency = 12)
-
-pos_covid <- which(mensuel_global$date == as.Date("2020-03-01"))
-
-cat("=== AM-004 — SENSIBILITÉ STL ===\n\n")
-cat(sprintf("%-15s  %-8s  %-8s  %-8s  %-30s\n",
-            "s.window", "Chow F", "Chow p", "BP opt.", "Conclusion T-004b"))
-cat(strrep("-", 75), "\n")
-
-# Correction — séparer periodic des valeurs numériques
-fenetres <- list("periodic", 7L, 13L, 21L)
-
-cat("=== AM-004 — SENSIBILITÉ STL ===\n\n")
-cat(sprintf("%-15s  %-8s  %-8s  %-8s  %-25s\n",
-            "s.window", "Chow F", "Chow p", "BP opt.", "Conclusion"))
-cat(strrep("-", 70), "\n")
-
-for (sw in fenetres) {
-  
-  stl_test <- stl(ts_mensuel,
-                  s.window = sw,
-                  t.window = 13,
-                  robust   = TRUE)
-  
-  residus <- ts(as.numeric(stl_test$time.series[, "remainder"]),
-                start = c(2016, 1), frequency = 12)
-  
-  chow_r  <- sctest(residus ~ 1, type = "Chow", point = pos_covid)
-  bp_r    <- breakpoints(residus ~ 1)
-  bic_r   <- summary(bp_r)$RSS["BIC", ]
-  n_opt_r <- as.integer(names(which.min(bic_r)))
-  
-  conclusion <- ifelse(chow_r$p.value > 0.05 & n_opt_r == 0,
-                       "Choc transitoire OK",
-                       paste0("Rupture residuelle (m=", n_opt_r, ")"))
-  
-  cat(sprintf("%-15s  %-8.3f  %-8.4f  %-8d  %-25s\n",
-              as.character(sw),
-              chow_r$statistic,
-              chow_r$p.value,
-              n_opt_r,
-              conclusion))
-}
-
-# ── BLOC DÉCISION AM-004 ─────────────────────────────────────
-
-# RÉSULTATS SENSIBILITÉ STL :
-# s.window    Chow p   BP opt.
-# periodic    0.164    2
-# 7           0.154    2
-# 13          0.160    2
-# 21          0.158    2
-#
-# CE QU'ON PEUT AFFIRMER :
-# - La conclusion T-004b est robuste au choix de s.window
-# - Chow non sig. dans tous les cas → choc transitoire confirmé
-# - BP m=2 systématique → artefact STL, pas rupture réelle
-# - Nos conclusions ne dépendent pas du paramètre de lissage
-#
-# LIMITE RÉSIDUELLE :
-# BP m=2 persiste quel que soit s.window — les deux "ruptures"
-# (nov 2019, mai 2021) sont des artefacts inhérents à la méthode
-# STL face à un choc aussi extrême que le COVID. Documenté.
-
-message("AM-004 complété — robustesse STL confirmée.")
-
-
-
-
-# ── AM-005 — TAUX DE COLLISION PAR KM PRODUIT ───────────────
-# Le nombre brut de collisions est biaisé par le volume d'offre
-# Plus de km produits = mécaniquement plus de risques d'accident
-# On normalise : taux = collisions / km_produits × 1 000 000
-# (nombre de collisions pour 1 million de km parcourus)
-
-collisions <- readRDS("../data/raw/collisions.rds") %>%
-  mutate(annee = year(jour))
-
-# Agrégation collisions par année
-coll_annuel <- collisions %>%
-  filter(annee >= 2016 & annee <= 2025) %>%
-  group_by(annee) %>%
-  summarise(n_collisions = n(), .groups = "drop")
-
-# Agrégation km produits par année — colonne = date
-km_annuel <- km_prod %>%
-  mutate(annee = year(date)) %>%
-  filter(annee >= 2016 & annee <= 2025) %>%
-  group_by(annee) %>%
-  summarise(km_totaux = sum(km_prod, na.rm = TRUE), .groups = "drop")
-
-# Jointure et calcul du taux
-taux_collision <- coll_annuel %>%
-  inner_join(km_annuel, by = "annee") %>%
-  mutate(
-    taux_par_Mkm = round(n_collisions / km_totaux * 1e6, 2)
-  )
-
-cat("=== AM-005 — TAUX DE COLLISION PAR MILLION DE KM ===\n\n")
-print(taux_collision)
-
-cat("\nTaux moyen  :", round(mean(taux_collision$taux_par_Mkm), 2), "\n")
-cat("Taux 2019   :", taux_collision$taux_par_Mkm[taux_collision$annee == 2019], "\n")
-cat("Taux 2020   :", taux_collision$taux_par_Mkm[taux_collision$annee == 2020], "\n")
-cat("Taux 2025   :", taux_collision$taux_par_Mkm[taux_collision$annee == 2025], "\n")
-
-
-# Graphique taux normalisé
-p_taux <- ggplot(taux_collision,
-                 aes(x = annee, y = taux_par_Mkm)) +
-  geom_col(fill = TPG_RED, alpha = 0.85) +
-  geom_line(color = COL_REF, linewidth = 0.8) +
-  geom_point(color = COL_REF, size = 2.5) +
-  geom_text(aes(label = taux_par_Mkm),
-            vjust = -0.5, size = 3, color = "grey30") +
-  geom_hline(yintercept = mean(taux_collision$taux_par_Mkm),
-             linetype = "dashed", color = COL_NEUTRE) +
-  annotate("text", x = 2016.3,
-           y = mean(taux_collision$taux_par_Mkm) + 0.8,
-           label = paste0("Moyenne : ",
-                          round(mean(taux_collision$taux_par_Mkm), 1),
-                          "/Mkm"),
-           size = 2.8, color = COL_NEUTRE, hjust = 0) +
-  scale_x_continuous(breaks = 2016:2025) +
-  scale_y_continuous(limits = c(0, 45)) +
-  labs(
-    title    = "Taux de collision TPG — normalisé par km produits",
-    subtitle = "Collisions pour 1 million de km parcourus | 2016-2025",
-    x        = NULL,
-    y        = "Collisions / million de km",
-    caption  = "Source : TPG Open Data | 2025 ≠ record une fois normalisé"
-  ) +
-  theme_tpg() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-print(p_taux)
-
-ggsave("../outputs/09_taux_collision_normalise.png",
-       plot = p_taux, width = 10, height = 6, dpi = 150)
-
-# ── BLOC DÉCISION AM-005 ─────────────────────────────────────
-# Taux moyen : 31.9 collisions/Mkm
-# 2018-2019 : pics à 37.2-37.6 — années les plus dangereuses
-# 2020      : creux à 26.6 — COVID = moins de trafic automobile
-# 2025      : 32.3 — dans la moyenne, pas un record normalisé
-#
-# CE QU'ON PEUT AFFIRMER :
-# - 2025 n'est PAS l'année la plus dangereuse une fois normalisée
-# - Le taux post-COVID (28-32) < taux pré-COVID (37-38)
-# - Le réseau est devenu plus sûr par km parcouru depuis 2020
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - Que la baisse est due à une politique de sécurité spécifique
-# - Que la tendance est statistiquement significative (n=10 ans)
-#
-# ANGLE NARRATIF FORT :
-# "Le record de 2025 en nombre brut est trompeur — normalisé par
-# les km produits, le réseau TPG est plus sûr qu'avant COVID"
-
-message("AM-005 complété — toutes les analyses manquantes résolues.")
+message("Script 09 terminé. Figures dans figures/, résultats dans resultats/.")

@@ -1,896 +1,500 @@
-# ── SCRIPT 14 — NOCTAMBUS REGIONAL 2016-2026 + LIGNE 10 AÉROPORT ───────────
-# Projet : TPG Open Data Analysis
+# ============================================================
+# SCRIPT 14 - NOCTAMBUS RÉGIONAL, RÉSEAU DE NUIT ET LIGNE 10
 # Auteur : Frat DAG
-# Date   : mai 2026
-# Données: mensuel.rds, journalier.rds, horaire.rds, km_prod.rds
-# ─────────────────────────────────────────────────────────────────────────────
+# Corrections : R-01, R-02, R-05, R-07, R-08, R-09, T-03, T-06,
+#               S-06, S-08, S-09, S-10, S-25, S-26, S-34, S-36, F-07
+# ------------------------------------------------------------
+# QUESTIONS :
+#   T-014a : la fréquentation du Noctambus régional baissait-elle
+#            déjà avant le COVID ?
+#   T-014b : le réseau de nuit du 10 décembre 2023 a-t-il augmenté
+#            la fréquentation nocturne ?
+#   T-014c / T-014d : la ligne 10 (aéroport) se distingue-t-elle
+#            des autres lignes principales ? (descriptif)
 #
-# APPROCHE : inductive — exploration visuelle avant hypothèse.
-# Synergies : SYN-007 (Noctambus 2016-2026), SYN-008 / IDEE-005 (Ligne 10).
+# PÉRIMÈTRE (S-25, F-07) : la catégorie NOCTAMBUS REGIONAL des
+# données tpg ne contient que les lignes régionales (NA et NC à NV).
+# La ligne NA était perdue à la lecture des CSV avant F-07 : son nom
+# était pris pour une valeur manquante. Les lignes urbaines du
+# Noctambus n'y figurent pas. Selon Wikipedia (article « Noctambus
+# (Genève) », consulté le 20.09.2026), le réseau complet a transporté
+# 767 000 personnes en 2019 ; la part couverte par la série analysée
+# est calculée plus bas. Les conclusions portent sur le Noctambus
+# régional, pas sur le Noctambus dans son ensemble.
 #
-# TESTS FORMELS :
-#   T-014a — Bai-Perron + Chow : ruptures série Noctambus (BP détecte, Chow confirme)
-#   T-014b — MW      : fréquentation nocturne réseau avant/après déc 2023
-#   T-014c — rang    : position ligne 10 dans distribution PRINCIPAL (purement descriptif)
-#   T-014d — MW      : ratio VACANCES/NORMAL ligne 10 vs autres PRINCIPAL
-#   T-014e — MW      : déclin pré-COVID Noctambus (avant/après 1re rupture Bai-Perron)
-#
-# LIMITE DOCUMENTÉE :
-#   Pas de données horaires par ligne disponibles (horaire.rds = réseau global,
-#   mn.rds = CCG uniquement). Le profil horaire ligne 10 individuel
-#   ne peut pas être isolé — documenté comme limite et non contourné.
-# ─────────────────────────────────────────────────────────────────────────────
+# CONTEXTE VÉRIFIÉ (tpg.ch, réseau 2024) : le Noctambus circulait
+# les nuits du vendredi au samedi et du samedi au dimanche. Il est
+# remplacé le 10.12.2023 par le prolongement nocturne des lignes de
+# jour, les mêmes nuits et celle du 31 décembre. Les tpg annoncent
+# pour 2024 110 000 voyageurs de plus entre 1h et 4h, soit +21,6 %
+# (communiqué 2025 relayé par Radio Lac, 24.03.2025).
+# ============================================================
 
-# =============================================================================
-# 1. SETUP
-# =============================================================================
-
-rm(list = ls())
-gc()
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
-library(ggplot2)
-library(lubridate)
-library(scales)
 library(tidyr)
-library(here)
+library(ggplot2)
+library(scales)
+library(lubridate)
 library(strucchange)
 
-# =============================================================================
-# 2. CHARGEMENT
-# =============================================================================
+# ── 1. CHARGEMENT ───────────────────────────────────────────
 
-mensuel <- readRDS(here::here("data/raw/mensuel.rds")) %>%
-  filter(donnees_definitives == TRUE, !is.na(ligne)) %>%
-  mutate(ligne = as.character(ligne),
-         date  = ym(mois))
+mensuel <- lire("mensuel") %>%
+  filter(!is.na(ligne)) %>%
+  mutate(date = ym(mois)) %>%
+  filter(date <= DATE_COUPURE)
 
-journalier <- readRDS(here::here("data/raw/journalier.rds")) %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne),
-         date  = as.Date(date))
+horaire <- lire("horaire") %>%
+  filter(horaire_tranche_stop_theo != "-") %>%
+  mutate(heure = as.integer(horaire_tranche_stop_theo)) %>%
+  filter(!is.na(heure))
 
-horaire <- readRDS(here::here("data/raw/horaire.rds")) %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(date = as.Date(date),
-         heure = as.integer(horaire_tranche_stop_theo))
+journalier <- lire("journalier")
 
-km_prod <- readRDS(here::here("data/raw/km_prod.rds")) %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne),
-         date  = as.Date(date))
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
 
-# Identifier la colonne km
-col_km <- if ("km_produits" %in% names(km_prod)) "km_produits" else "km_prod"
-km_prod <- km_prod %>% rename(km_col = !!sym(col_km))
+# ── 2. SERIE NOCTAMBUS REGIONAL ─────────────────────────────
 
-cat("=== CHARGEMENT ===\n")
-cat("mensuel    :", nrow(mensuel), "lignes |",
-    format(min(mensuel$date)), "->", format(max(mensuel$date)), "\n")
-cat("journalier :", nrow(journalier), "lignes |",
-    format(min(journalier$date)), "->", format(max(journalier$date)), "\n")
-cat("horaire    :", nrow(horaire), "lignes |",
-    format(min(horaire$date)), "->", format(max(horaire$date)), "\n")
-cat("km_prod    :", nrow(km_prod), "lignes\n\n")
-
-# Vérifier la valeur exacte du type Noctambus dans mensuel
-cat("--- Types de ligne dans mensuel (vérification NOCTAMBUS) ---\n")
-mensuel %>% count(ligne_type_act, sort = TRUE) %>% print()
-cat("\n")
-
-# =============================================================================
-# 3. SYN-007 — NOCTAMBUS REGIONAL 2016-2026 : TRAJECTOIRE COMPLÈTE
-# =============================================================================
-# Exploration préliminaire : combien de mois, quelles lignes, quel volume ?
-# Avant de formuler une hypothèse sur la rupture.
-
-# --- 3.1 Série mensuelle Noctambus ---
-
-nocta_mensuel <- mensuel %>%
+nocta <- mensuel %>%
   filter(ligne_type_act == "NOCTAMBUS REGIONAL") %>%
   group_by(date) %>%
-  summarise(
-    montees_tot = sum(nb_de_montees, na.rm = TRUE),
-    n_lignes    = n_distinct(ligne),
-    .groups     = "drop"
-  ) %>%
+  summarise(montees = sum(nb_de_montees, na.rm = TRUE),
+            n_lignes = n_distinct(ligne), .groups = "drop") %>%
   arrange(date)
 
-cat("=== 3. NOCTAMBUS REGIONAL — SÉRIE MENSUELLE ===\n")
-cat("Nombre de mois :", nrow(nocta_mensuel), "\n")
-cat("Période        :", format(min(nocta_mensuel$date)), "->",
-    format(max(nocta_mensuel$date)), "\n")
-cat("Lignes Noctambus présentes :", "\n")
-mensuel %>%
-  filter(ligne_type_act == "NOCTAMBUS REGIONAL") %>%
-  distinct(ligne) %>%
-  arrange(ligne) %>%
-  pull(ligne) %>%
-  paste(collapse = ", ") %>%
-  cat(., "\n\n")
+lignes_nocta <- sort(unique(mensuel$ligne[mensuel$ligne_type_act == "NOCTAMBUS REGIONAL"]))
 
-# Référence 2019 (pré-COVID)
-ref_2019 <- nocta_mensuel %>%
-  filter(year(date) == 2019) %>%
-  summarise(moy = mean(montees_tot)) %>%
-  pull(moy)
+cat("\n=== NOCTAMBUS RÉGIONAL ===\n")
+cat("Lignes (", length(lignes_nocta), ") :", paste(lignes_nocta, collapse = ", "), "\n")
+cat("Mois :", nrow(nocta), "de", format(min(nocta$date)), "à",
+    format(max(nocta$date)), "\n")
 
-cat("--- Récupération vs 2019 ---\n")
-nocta_mensuel %>%
-  mutate(annee = year(date)) %>%
-  filter(annee %in% c(2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023)) %>%
-  group_by(annee) %>%
-  summarise(
-    moy_mensuelle  = round(mean(montees_tot)),
-    pct_vs_2019   = round(mean(montees_tot) / ref_2019 * 100, 1),
-    .groups        = "drop"
-  ) %>%
-  print()
+# S-06 : continuite. Les mois absents sont des mois sans service.
+attendus  <- seq(min(nocta$date), max(nocta$date), by = "month")
+manquants <- attendus[!attendus %in% nocta$date]
+cat("Mois sans données :", length(manquants), "\n")
+if (length(manquants) > 0) print(format(manquants, "%Y-%m"))
+cat("La version d'avril construisait ts(start = c(2016, 1)) sur cette\n")
+cat("série : après mars 2020, chaque date était décalée du nombre de\n")
+cat("mois manquants. Les dates de rupture obtenues étaient fausses.\n")
 
-# Observation : quel niveau atteint en 2023 juste avant l'absorption ?
-mois_finaux <- nocta_mensuel %>%
-  filter(year(date) == 2023) %>%
-  summarise(moy_2023 = mean(montees_tot)) %>%
-  pull(moy_2023)
-cat("\nMoyenne mensuelle 2023 (derniere annee) :",
-    round(mois_finaux), "montees\n")
-cat("Soit", round(mois_finaux / ref_2019 * 100, 1), "% du niveau 2019\n\n")
-
-# --- 3.2 Exploration visuelle : y a-t-il un signe de déclin avant l'absorption ? ---
-# On regarde la serie 2021-2023 — si le Noctambus était déjà en déclin
-# avant dec 2023, le Chow test devrait le détecter.
-
-nocta_post_covid <- nocta_mensuel %>%
-  filter(date >= as.Date("2021-06-01"))
-
-cat("--- Série post-COVID (jun 2021 -> déc 2023) ---\n")
-cat("n =", nrow(nocta_post_covid), "mois\n")
-cat("Tendance descriptive :\n")
-nocta_post_covid %>%
+annuel_nocta <- nocta %>%
   mutate(annee = year(date)) %>%
   group_by(annee) %>%
-  summarise(moy = round(mean(montees_tot)), .groups = "drop") %>%
-  print()
+  summarise(mois_de_service = n(),
+            montees_milliers = round(sum(montees) / 1e3, 1), .groups = "drop")
+ref19 <- annuel_nocta$montees_milliers[annuel_nocta$annee == 2019]
+annuel_nocta <- annuel_nocta %>%
+  mutate(pct_vs_2019 = round(100 * (montees_milliers / ref19 - 1), 1))
 
-# --- 3.3 Test T-014a : Bai-Perron puis Chow — ruptures série Noctambus ---
-# Méthode : Bai-Perron détecte sans a priori, Chow confirme chaque date détectée.
-# Cohérent avec script 07 (T-004b). Le point sept 2023 était ad hoc — supprimé.
+cat("\nMontées annuelles (milliers) :\n")
+print(as.data.frame(annuel_nocta))
+cat("2020 et 2021 sont incomplètes (service suspendu). En 2023, seul\n")
+cat("décembre est partiel (arrêt le 10.12.2023).\n")
 
-cat("\n=== T-014a — BAI-PERRON + CHOW : ruptures série Noctambus ===\n")
+# Ordre de grandeur du périmètre (S-25). Voyageurs et montées ne sont
+# pas la même unité : le rapport indique une échelle, pas une part exacte.
+VOYAGEURS_NOCTAMBUS_2019 <- 767000   # Wikipedia, consulté le 20.09.2026
+cat("Montées 2019 de la série rapportées aux voyageurs 2019 du réseau\n")
+cat("Noctambus complet :", round(100 * ref19 * 1e3 / VOYAGEURS_NOCTAMBUS_2019, 1),
+    "% (ordre de grandeur).\n")
 
-ts_nocta <- ts(nocta_mensuel$montees_tot,
-               start     = c(year(min(nocta_mensuel$date)),
-                              month(min(nocta_mensuel$date))),
-               frequency = 12)
-
-# --- Étape 1 : Bai-Perron — détection automatique sans a priori ---
-cat("--- Étape 1 : Bai-Perron ---\n")
-bp_nocta     <- breakpoints(ts_nocta ~ 1)
-bp_nocta_sum <- summary(bp_nocta)
-bic_nocta    <- bp_nocta_sum$RSS["BIC", ]
-n_opt_nocta  <- as.integer(names(which.min(bic_nocta)))
-
-cat("BIC par nombre de ruptures :\n")
-print(round(bic_nocta, 1))
-cat("Nombre optimal :", n_opt_nocta, "\n")
-
-if (n_opt_nocta > 0) {
-  bp_nocta_opt  <- breakpoints(bp_nocta, breaks = n_opt_nocta)
-  dates_nocta_r <- nocta_mensuel$date[bp_nocta_opt$breakpoints]
-  cat("Dates détectées :\n")
-  for (i in seq_along(dates_nocta_r)) {
-    cat(" ", i, ":", format(dates_nocta_r[i], "%B %Y"), "\n")
-  }
-} else {
-  dates_nocta_r <- as.Date(character(0))
-  cat("Aucune rupture détectée.\n")
-}
-
-# --- Étape 2 : Chow sur chaque date Bai-Perron + COVID pour référence ---
-cat("\n--- Étape 2 : Chow — confirmation des dates détectées + COVID (ref) ---\n")
-
-dates_chow <- c(
-  if (length(dates_nocta_r) > 0)
-    setNames(as.list(dates_nocta_r),
-             paste0("BP", seq_along(dates_nocta_r),
-                    " ", format(dates_nocta_r, "%b %Y")))
-  else list(),
-  list("COVID mars 2020 (ref)" = as.Date("2020-03-01"))
-)
-
-for (lbl in names(dates_chow)) {
-  dt  <- dates_chow[[lbl]]
-  pos <- which(nocta_mensuel$date == dt)
-  if (length(pos) > 0 && pos > 2 && pos < length(ts_nocta) - 2) {
-    chow_n <- sctest(ts_nocta ~ 1, type = "Chow", point = pos)
-    cat(sprintf("  %-35s pos=%-3d F=%-7.3f p=%s %s\n",
-                lbl, pos, chow_n$statistic,
-                format(chow_n$p.value, scientific = TRUE),
-                ifelse(chow_n$p.value < 0.05, "-> CONFIRME", "-> ns")))
-  } else {
-    cat(sprintf("  %-35s : hors plage testable\n", lbl))
-  }
-}
-
-cat("\n--- Conclusions formelles T-014a ---\n")
-cat("Ce qu'on peut affirmer :\n")
-cat("  - Ruptures detaillees selon resultats ci-dessus\n")
-cat("  - COVID (mars 2020) = choc brutal : plancher avr 2020 attendu\n")
-cat("  - Rupture post-COVID : le Noctambus a-t-il recupere ou\n")
-cat("    est-il reste en dessous de 2019 (contrairement au reseau global) ?\n")
-cat("Ce qu'on NE peut PAS affirmer :\n")
-cat("  - Que le declin du Noctambus est cause par un changement\n")
-cat("    de comportement plutot que par une decision administrative\n")
-cat("  - Que les voyageurs Noctambus ont migre vers d'autres modes\n")
-cat("    (Uber, voiture personnelle) — aucune donnee modale disponible\n")
-
-# --- 3.4 Test T-014e : déclin pré-COVID Noctambus (avant/après 1re rupture BP) ---
-# Hypothèse inductive : Bai-Perron a détecté une rupture avant le COVID.
-# On quantifie le déclin entre les deux périodes pré-COVID.
-# Mise en regard : Uber à Genève depuis 2014 (OBS-023) — hypothèse interprétative,
-# non testable causalement.
-
-cat("\n=== T-014e — DÉCLIN PRÉ-COVID NOCTAMBUS ===\n")
-
-bp_pre_covid <- dates_nocta_r[!is.na(dates_nocta_r) &
-                               dates_nocta_r < as.Date("2020-01-01")]
-
-if (length(bp_pre_covid) > 0) {
-  date_bp_precovid <- bp_pre_covid[1]
-  cat("Rupture Bai-Perron pré-COVID retenue :",
-      format(date_bp_precovid, "%B %Y"), "\n")
-  cat("Périodes : jan 2016 ->",
-      format(date_bp_precovid - months(1), "%b %Y"),
-      " | ", format(date_bp_precovid, "%b %Y"),
-      "-> déc 2019\n\n")
-
-  nocta_t014e <- nocta_mensuel %>%
-    filter(date < as.Date("2020-01-01")) %>%
-    mutate(periode_e = case_when(
-      date <  date_bp_precovid ~ "PERIODE_1",
-      date >= date_bp_precovid ~ "PERIODE_2",
-      TRUE ~ NA_character_
-    )) %>%
-    filter(!is.na(periode_e))
-
-  cat("--- Volumes par période (hors COVID) ---\n")
-  nocta_t014e %>%
-    group_by(periode_e) %>%
-    summarise(
-      n             = n(),
-      debut         = format(min(date), "%b %Y"),
-      fin           = format(max(date), "%b %Y"),
-      moy_mensuelle = round(mean(montees_tot)),
-      pct_vs_2019   = round(mean(montees_tot) / ref_2019 * 100, 1),
-      .groups       = "drop"
-    ) %>%
-    print()
-
-  p1_vals <- nocta_t014e$montees_tot[nocta_t014e$periode_e == "PERIODE_1"]
-  p2_vals <- nocta_t014e$montees_tot[nocta_t014e$periode_e == "PERIODE_2"]
-
-  if (length(p1_vals) >= 3 && length(p2_vals) >= 3) {
-    mw_t014e <- wilcox.test(p2_vals, p1_vals,
-                             alternative = "two.sided",
-                             conf.int    = TRUE,
-                             conf.level  = 0.95)
-
-    n_t014e <- length(p1_vals) + length(p2_vals)
-    z_t014e <- qnorm(mw_t014e$p.value / 2)
-    r_t014e <- abs(z_t014e) / sqrt(n_t014e)
-    diff_e_pct <- round((mean(p2_vals) / mean(p1_vals) - 1) * 100, 1)
-
-    cat("\nT-014e — Mann-Whitney PERIODE_2 vs PERIODE_1 :\n")
-    cat("W             :", mw_t014e$statistic, "\n")
-    cat("p-value       :", format(mw_t014e$p.value, scientific = TRUE), "\n")
-    cat("HL estimee    :", round(mw_t014e$estimate, 0), "montees\n")
-    cat("IC 95%        : [", round(mw_t014e$conf.int[1], 0),
-        ";", round(mw_t014e$conf.int[2], 0), "]\n")
-    cat("r             :", round(r_t014e, 3), "\n")
-    cat("Diff. moyenne :", diff_e_pct, "%\n")
-    cat("->", ifelse(mw_t014e$p.value < 0.05,
-                   "REJET H0 — declin significatif avant COVID",
-                   "NON-REJET H0"), "\n\n")
-
-    cat("--- Conclusions formelles T-014e ---\n")
-    cat("Ce qu'on peut affirmer :\n")
-    if (mw_t014e$p.value < 0.05 && diff_e_pct < 0) {
-      cat("  - Le Noctambus etait deja en declin AVANT le COVID\n")
-      cat("  - Baisse de", abs(diff_e_pct), "% en moyenne mensuelle\n")
-      cat("    entre PERIODE_1 et PERIODE_2 (", format(date_bp_precovid, "%b %Y"),
-          ")\n")
-    } else if (mw_t014e$p.value >= 0.05) {
-      cat("  - Pas de declin significatif detecte entre PERIODE_1 et PERIODE_2\n")
-      cat("  - La rupture Bai-Perron ne se traduit pas en baisse MW formelle\n")
-    } else {
-      cat("  - Hausse detectee entre les deux periodes (inattendu)\n")
-    }
-    cat("Ce qu'on NE peut PAS affirmer :\n")
-    cat("  - Que ce declin est cause par la concurrence VTC (Uber a Geneve\n")
-    cat("    depuis 2014, OBS-023) : correlation temporelle, pas causalite\n")
-    cat("  - Que l'hypothese VTC est la seule plausible : changements sociaux\n")
-    cat("    post-2015 (offre de transports alternatifs, evolution des usages\n")
-    cat("    nocturnes) sont des facteurs confondants non mesurables ici\n")
-  } else {
-    cat("Donnees insuffisantes pour T-014e (n < 3 dans un groupe)\n")
-    mw_t014e <- list(p.value = NA, estimate = NA, conf.int = c(NA, NA))
-    r_t014e  <- NA
-  }
-} else {
-  cat("Bai-Perron n'a detecte aucune rupture pre-COVID — T-014e non applicable\n")
-  mw_t014e <- list(p.value = NA, estimate = NA, conf.int = c(NA, NA))
-  r_t014e  <- NA
-}
-
-# --- 3.5 Post-absorption : la fréquentation nocturne a-t-elle migré ? ---
-# Hypothèse : si le Noctambus transportait des voyageurs réels,
-# ces voyageurs se retrouvent quelque part après déc 2023.
-# Proxy : fréquentation heures 0h-5h dans horaire.rds avant/après déc 2023.
-
-cat("\n=== T-014b — FRÉQUENTATION NOCTURNE AVANT/APRÈS DÉC 2023 ===\n")
-cat("Proxy : heures 0h, 1h, 2h, 3h, 4h, 5h dans horaire.rds\n")
-cat("Avant : jan 2022 -> nov 2023 | Après : jan 2024 -> déc 2025\n\n")
-
-nuit <- horaire %>%
-  filter(!is.na(heure), heure %in% 0:5,
-         horaire_type %in% c("SAMEDI", "DIMANCHE")) %>%
-  mutate(periode = case_when(
-    date >= as.Date("2022-01-01") & date < as.Date("2023-12-01") ~ "AVANT",
-    date >= as.Date("2024-01-01") & date <= as.Date("2025-12-31") ~ "APRES",
-    TRUE ~ NA_character_
-  )) %>%
-  filter(!is.na(periode))
-
-cat("--- Statistiques nocturnes (0h-5h, weekend) ---\n")
-nuit %>%
-  group_by(periode) %>%
-  summarise(
-    n           = n(),
-    med_montees = round(median(nb_de_montees, na.rm = TRUE)),
-    moy_montees = round(mean(nb_de_montees, na.rm = TRUE)),
-    .groups     = "drop"
-  ) %>%
-  print()
-
-if (nrow(nuit) > 0 && length(unique(nuit$periode)) == 2) {
-  avant_nuit  <- nuit$nb_de_montees[nuit$periode == "AVANT"]
-  apres_nuit  <- nuit$nb_de_montees[nuit$periode == "APRES"]
-
-  cat("\n--- Normalite (Shapiro-Wilk, n <= 5000) ---\n")
-  for (p in c("AVANT", "APRES")) {
-    v <- nuit$nb_de_montees[nuit$periode == p]
-    s <- if (length(v) > 5000) sample(v, 5000) else v
-    sw <- shapiro.test(s)
-    cat(sprintf("  %-6s n=%-4d W=%.3f p=%.4f %s\n",
-                p, length(v), sw$statistic, sw$p.value,
-                ifelse(sw$p.value < 0.05, "-> NON normale", "-> normale")))
-  }
-
-  mw_t014b <- wilcox.test(apres_nuit, avant_nuit,
-                           alternative = "two.sided",
-                           conf.int    = TRUE,
-                           conf.level  = 0.95)
-
-  n_t014b <- length(avant_nuit) + length(apres_nuit)
-  z_t014b <- qnorm(mw_t014b$p.value / 2)
-  r_t014b <- abs(z_t014b) / sqrt(n_t014b)
-
-  diff_pct <- round((median(apres_nuit, na.rm = TRUE) /
-                       median(avant_nuit, na.rm = TRUE) - 1) * 100, 1)
-
-  cat("\nW            :", mw_t014b$statistic, "\n")
-  cat("p-value      :", format(mw_t014b$p.value, scientific = TRUE), "\n")
-  cat("HL estimee   :", round(mw_t014b$estimate, 1), "montees\n")
-  cat("IC 95%       : [", round(mw_t014b$conf.int[1], 1),
-      ";", round(mw_t014b$conf.int[2], 1), "]\n")
-  cat("Diff. mediane:", diff_pct, "%\n")
-  cat("r            :", round(r_t014b, 3), "\n")
-  cat("->", ifelse(mw_t014b$p.value < 0.05,
-                 "REJET H0 — frequentation nocturne differente apres absorption",
-                 "NON-REJET H0 — pas de migration nocturne detectable"), "\n\n")
-
-  cat("--- Conclusions formelles T-014b ---\n")
-  if (mw_t014b$p.value < 0.05 && diff_pct > 0) {
-    cat("Ce qu'on peut affirmer :\n")
-    cat("  - La frequentation nocturne (0h-5h, weekend) est statistiquement\n")
-    cat("    plus elevee apres dec 2023 (p =",
-        format(mw_t014b$p.value, scientific = TRUE), ")\n")
-    cat("  - MAIS effet pratiquement marginal : r =", round(r_t014b, 3),
-        "(negligeable)\n")
-    cat("    +", round(mw_t014b$estimate, 0), "montees sur une mediane de",
-        round(median(avant_nuit, na.rm = TRUE), 0), "montees (periode AVANT)\n")
-  } else if (mw_t014b$p.value < 0.05 && diff_pct < 0) {
-    cat("Ce qu'on peut affirmer :\n")
-    cat("  - La frequentation nocturne a baisse apres absorption (p =",
-        format(mw_t014b$p.value, scientific = TRUE), ")\n")
-    cat("  - r =", round(r_t014b, 3), "(negligeable) — impact pratique marginal\n")
-  } else {
-    cat("Ce qu'on peut affirmer :\n")
-    cat("  - Pas de changement significatif de la frequentation nocturne\n")
-    cat("  - La disparition du Noctambus n'a pas modifie le profil nocturne global\n")
-  }
-  cat("Ce qu'on NE peut PAS affirmer :\n")
-  cat("  - Que les memes individus sont concernes (pas de donnees individuelles)\n")
-  cat("  - BIAIS DE SIMULTANEITE (limite principale) : les heures 0h-5h\n")
-  cat("    post-absorption incluent les bus reguliers prolonges crees\n")
-  cat("    precisement pour remplacer le Noctambus. L'effet (migration\n")
-  cat("    eventuelle) et sa cause (offre de remplacement) sont mesures\n")
-  cat("    simultanement — les deux ne sont pas separables ici.\n")
-  cat("  - Que la hausse observee serait due aux anciens usagers Noctambus\n")
-  cat("    plutot qu'au nouveau service de remplacement lui-meme\n")
-} else {
-  cat("Donnees insuffisantes pour le test T-014b\n")
-  r_t014b <- NA
-  mw_t014b <- list(p.value = NA, estimate = NA, conf.int = c(NA, NA))
-}
-
-# [TPG] La fréquentation nocturne post-absorption est un indicateur clé
-# de la réussite de l'intégration du Noctambus dans le réseau régulier.
-# Si elle baisse, les voyageurs ont trouvé une alternative non-TPG.
-# Si elle est stable ou hausse, l'intégration est un succès.
-
-# =============================================================================
-# 4. SYN-008 / IDEE-005 — LIGNE 10 AÉROPORT : PROFIL SPÉCIFIQUE
-# =============================================================================
-# Exploration : la ligne 10 est la seule ligne PRINCIPAL à desservir
-# l'aéroport de Genève. Elle est 10e au classement du réseau alors que
-# l'aéroport est le 2e pôle d'emploi genevois.
-# Hypothèse : concurrence CFF (Cornavin → Aéroport ≈ 5 min) explique
-# le rang modeste. Mais les profils des usagers (employés vs passagers)
-# méritent une exploration.
+# ── 3. T-014a : TENDANCE AVANT LE COVID ─────────────────────
+# On ne travaille que sur le segment continu qui précède le COVID,
+# où ts() est valide. La série est désaisonnalisée avant le test.
 #
-# LIMITE DOCUMENTÉE : pas de données horaires par ligne disponibles.
-# L'hypothèse "pic précoce 5h-6h employés aéroport" ne peut pas être
-# testée formellement sans données horaires par ligne.
+# S-08 : la version d'avril trouvait des dates avec Bai-Perron puis
+# les « confirmait » par un test de Chow à ces mêmes dates. C'est
+# utiliser deux fois les mêmes données : le Chow est alors
+# significatif presque par construction. Le test correct d'une
+# rupture à date inconnue est le supF d'Andrews, dont la loi tient
+# compte de la recherche de la date.
 
-cat("\n=== 4. LIGNE 10 AÉROPORT ===\n")
+pre <- nocta %>% filter(date < D_COVID)
+att_pre <- seq(min(pre$date), max(pre$date), by = "month")
+stopifnot(all(att_pre %in% pre$date))
 
-# --- 4.1 Exploration de base ---
+ts_pre  <- ts(pre$montees, start = c(year(min(pre$date)), month(min(pre$date))),
+              frequency = 12)
+stl_pre <- stl(ts_pre, s.window = "periodic", robust = TRUE)
+des_pre <- ts(as.numeric(ts_pre) - as.numeric(stl_pre$time.series[, "seasonal"]),
+              start = start(ts_pre), frequency = 12)
 
-ligne10 <- journalier %>%
-  filter(ligne == "10")
+fs    <- Fstats(des_pre ~ 1, from = 0.15)
+supf  <- sctest(fs, type = "supF")
+date_supf <- pre$date[fs$breakpoint]
 
-cat("Ligne 10 — observations journalier :", nrow(ligne10), "\n")
-cat("Période  :", format(min(ligne10$date)), "->",
-    format(max(ligne10$date)), "\n")
-cat("Arrêts distincts :", n_distinct(ligne10$arret), "\n\n")
+sp_pre <- suppressWarnings(cor.test(seq_along(des_pre), as.numeric(des_pre),
+                                    method = "spearman"))
+r1_pre <- as.numeric(acf(as.numeric(des_pre), plot = FALSE, lag.max = 1)$acf[2])
+neff_pre <- round(length(des_pre) * (1 - r1_pre) / (1 + r1_pre), 1)
 
-# Type de la ligne 10
-cat("Type ligne 10 :", unique(ligne10$ligne_type_act), "\n\n")
+var_16_19 <- annuel_nocta$pct_vs_2019[annuel_nocta$annee == 2016]
 
-# Montées totales ligne 10 vs réseau
-total_L10    <- sum(ligne10$nb_de_montees, na.rm = TRUE)
-total_reseau <- sum(journalier$nb_de_montees, na.rm = TRUE)
-cat("Montées totales L10    :",
-    format(round(total_L10 / 1e6, 2)), "M\n")
-cat("% réseau               :",
-    round(total_L10 / total_reseau * 100, 2), "%\n\n")
+cat("\n=== T-014a : AVANT LE COVID (", format(min(pre$date), "%m.%Y"), "à",
+    format(max(pre$date), "%m.%Y"), ",", nrow(pre), "mois continus ) ===\n")
+cat("Montées 2019 par rapport à 2016 :",
+    round(100 * (ref19 / annuel_nocta$montees_milliers[annuel_nocta$annee == 2016] - 1), 1),
+    "%\n")
+cat("Tendance (Spearman, série désaisonnalisée) : rho =",
+    round(as.numeric(sp_pre$estimate), 3), "\n")
+cat("Autocorrélation au premier retard :", round(r1_pre, 3),
+    "| observations effectives :", neff_pre, "\n")
+cat("Test supF (rupture à date inconnue) : F max =",
+    round(as.numeric(supf$statistic), 2),
+    "| p =", format(supf$p.value, digits = 3),
+    "| date du F max :", format(date_supf, "%m.%Y"), "\n")
+cat("Le supF suppose des erreurs indépendantes : avec l'autocorrélation\n")
+cat("observée, sa p-value est optimiste. Lecture principale : la baisse\n")
+cat("progressive des totaux annuels et le signe de rho.\n")
 
-# Rang dans le réseau (classement par montées totales, toutes lignes)
-rang_L10 <- journalier %>%
-  group_by(ligne, ligne_type_act) %>%
-  summarise(mont = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
-  arrange(desc(mont)) %>%
-  mutate(rang = row_number()) %>%
-  filter(ligne == "10")
+enregistrer(
+  test_id = "T-014a", script = "14_noctambus_ligne10.R",
+  methode = "Noctambus régional avant COVID : supF d'Andrews et Spearman sur série désaisonnalisée",
+  n = nrow(pre), statistique = round(as.numeric(supf$statistic), 2), p_value = NA,
+  effet_nom = "Spearman rho (tendance)", effet = round(as.numeric(sp_pre$estimate), 3),
+  note = paste0("2019 contre 2016 : ",
+                round(100 * (ref19 / annuel_nocta$montees_milliers[annuel_nocta$annee == 2016] - 1), 1),
+                " %. F max en ", format(date_supf, "%Y-%m"), ", p supF = ",
+                format(supf$p.value, digits = 3), ". n effectif ", neff_pre,
+                ". ", length(lignes_nocta), " lignes régionales, ligne NA comprise (S-25, F-07).",
+                " Chow aux dates Bai-Perron retiré (S-08).")
+)
 
-cat("Rang ligne 10 :", rang_L10$rang, "sur",
-    n_distinct(journalier$ligne), "lignes\n\n")
-
-# --- 4.2 Évolution mensuelle ligne 10 (mensuel 2016-2026) ---
-
-ligne10_mensuel <- mensuel %>%
-  filter(ligne == "10") %>%
-  group_by(date) %>%
-  summarise(montees_tot = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
-  arrange(date)
-
-cat("--- Évolution mensuelle ligne 10 ---\n")
-cat("Disponible de :", format(min(ligne10_mensuel$date)),
-    "à :", format(max(ligne10_mensuel$date)), "\n")
-
-ref_L10_2019 <- ligne10_mensuel %>%
-  filter(year(date) == 2019) %>%
-  summarise(moy = mean(montees_tot)) %>%
-  pull(moy)
-
-ligne10_mensuel %>%
+# Reprise après COVID, comparée à celle du réseau entier
+reseau_annuel <- mensuel %>%
   mutate(annee = year(date)) %>%
+  filter(annee %in% c(2019, 2022)) %>%
   group_by(annee) %>%
-  summarise(
-    moy_mensuelle = round(mean(montees_tot)),
-    pct_vs_2019   = round(mean(montees_tot) / ref_L10_2019 * 100, 1),
-    .groups       = "drop"
-  ) %>%
-  print()
+  summarise(t = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+reprise_reseau <- round(100 * (reseau_annuel$t[reseau_annuel$annee == 2022] /
+                                 reseau_annuel$t[reseau_annuel$annee == 2019] - 1), 1)
+reprise_nocta <- annuel_nocta$pct_vs_2019[annuel_nocta$annee == 2022]
 
-# --- 4.3 Profil journalier ligne 10 (jours de semaine vs weekend) ---
+cat("\nDernière année complète de service, 2022, par rapport à 2019 :\n")
+cat("  Noctambus régional :", reprise_nocta, "%\n")
+cat("  Réseau entier      :", reprise_reseau, "%\n")
+cat("Le Noctambus régional n'avait pas retrouvé son niveau d'avant le\n")
+cat("COVID quand il a été remplacé. Les données ne disent pas pourquoi.\n")
 
-cat("\n--- Profil par horaire_type (journalier) ---\n")
-ligne10 %>%
-  group_by(horaire_type) %>%
-  summarise(
-    n           = n_distinct(date),
-    med_montees = round(median(nb_de_montees, na.rm = TRUE)),
-    moy_montees = round(mean(nb_de_montees, na.rm = TRUE)),
-    .groups     = "drop"
-  ) %>%
-  arrange(desc(moy_montees)) %>%
-  print()
+# ── 4. T-014b : FRÉQUENTATION ENTRE 1H ET 4H ────────────────
+# S-09 : la version d'avril mélangeait les heures 0 à 5, dont 0h et
+# 5h qui relèvent de la fin et du début du service de jour, et
+# raisonnait en heure-jour. On retient les tranches 1h, 2h et 3h,
+# soit la plage « entre 1h et 4h » retenue par les tpg.
+#
+# S-36 : quel jour porte une heure après minuit ? On le vérifie dans
+# les données plutôt que de le supposer. Les montées de 1h à 4h sont
+# rattachées au jour de service (la nuit du vendredi au samedi porte
+# la date du vendredi) : le vendredi et le samedi en portent la quasi
+# totalité, le dimanche presque rien. Les nuits de fin de semaine
+# sont donc les jours de service vendredi et samedi.
+#
+# S-36 : depuis décembre 2025, des montées apparaissent aussi entre
+# 1h et 4h les autres nuits. Les compter dans un total divisé par le
+# nombre de week-ends gonflait la série en 2026. Elles sont isolées
+# et affichées à part.
+#
+# Comparaison appariée mois par mois, janvier à novembre 2023
+# (ancien réseau) contre janvier à novembre 2024 (nouveau réseau).
+# Décembre est exclu : la bascule a lieu le 10.12.2023, et la nuit
+# du 31 décembre est un cas particulier.
+# Contrôle : même calcul sur les heures de jour, 6h à 23h.
 
-# Comparaison : la ligne 10 baisse-t-elle autant que le réseau en vacances ?
-cat("\n--- L10 : différence NORMAL vs VACANCES ---\n")
-L10_agg_ht <- ligne10 %>%
-  filter(horaire_type %in% c("NORMAL", "VACANCES")) %>%
-  group_by(date, horaire_type) %>%
-  summarise(montees = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+JOURS_WEEKEND <- c(5, 6)   # indice_jour_semaine : vendredi et samedi
 
-L10_norm_med <- median(L10_agg_ht$montees[L10_agg_ht$horaire_type == "NORMAL"],
-                        na.rm = TRUE)
-L10_vac_med  <- median(L10_agg_ht$montees[L10_agg_ht$horaire_type == "VACANCES"],
-                         na.rm = TRUE)
-L10_diff     <- round((L10_vac_med / L10_norm_med - 1) * 100, 1)
+repartition_nuit <- horaire %>%
+  filter(heure %in% 1:3) %>%
+  mutate(annee = year(date)) %>%
+  group_by(annee, jour_semaine) %>%
+  summarise(m = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+  group_by(annee) %>%
+  mutate(pct = round(100 * m / sum(m), 1)) %>%
+  select(-m) %>%
+  pivot_wider(names_from = jour_semaine, values_from = pct)
 
-cat("NORMAL   mediane :", round(L10_norm_med), "montees/jour\n")
-cat("VACANCES mediane :", round(L10_vac_med), "montees/jour\n")
-cat("Difference       :", L10_diff, "%\n")
-cat("(Rappel reseau global T-013a : -28.2%) \n")
-cat("-> Si L10 baisse MOINS que reseau : usage employes (stable vacances)\n")
-cat("-> Si L10 baisse PLUS  que reseau : usage voyageurs (pic estival TPG)\n\n")
+cat("\n=== S-36 : MONTÉES DE 1H À 4H PAR JOUR DE SERVICE (% de l'année) ===\n")
+print(as.data.frame(repartition_nuit))
+cat("Le pic isolé d'un autre jour une année donnée correspond à la nuit\n")
+cat("du 31 décembre.\n")
 
-# --- 4.4 T-014c : position de la ligne 10 dans la distribution PRINCIPAL ---
-# LIMITE MÉTHODOLOGIQUE : n_L10 = 1 — un seul ratio par définition.
-# Mann-Whitney avec n=1 = test de rang exact non interprétable comme test
-# d'hypothèse classique. Résultat purement descriptif (rang dans la distribution).
+samedis_du_mois <- function(d) {
+  jours <- seq(floor_date(d, "month"), ceiling_date(d, "month") - 1, by = "day")
+  sum(wday(jours, week_start = 1) == 6)
+}
 
-cat("=== T-014c — DESCRIPTIF : position ligne 10 dans distribution PRINCIPAL ===\n")
-cat("LIMITE : n_L10 = 1 — rang informatif uniquement, pas de test formel.\n\n")
-
-# Ratio global par ligne (jours NORMAL — cohérent avec script 13)
-exclus14 <- c("C1","C3","C4","C5","C6","C7","C8","C9",
-              "NC","ND","NE","NJ","NK","NM","NP","NS","NT","NV","NO",
-              "NB1","NB2","NB3","NB4","NB5","NB6")
-
-# km ligne 10
-col_km2 <- if ("km_produits" %in% names(km_prod)) "km_produits" else "km_col"
-
-ratio_principal <- journalier %>%
-  filter(!ligne %in% exclus14,
-         ligne_type_act == "PRINCIPAL",
-         horaire_type == "NORMAL") %>%
-  group_by(ligne) %>%
-  summarise(montees_tot = sum(nb_de_montees, na.rm = TRUE),
-            .groups     = "drop") %>%
-  inner_join(
-    km_prod %>%
-      filter(!ligne %in% exclus14, ligne_type_act == "PRINCIPAL") %>%
-      group_by(ligne) %>%
-      summarise(km_tot = sum(km_col, na.rm = TRUE), .groups = "drop"),
-    by = "ligne"
-  ) %>%
-  filter(km_tot > 0, montees_tot > 0) %>%
-  mutate(ratio = montees_tot / km_tot,
-         is_L10 = ligne == "10")
-
-ratio_L10     <- ratio_principal$ratio[ratio_principal$is_L10]
-ratio_autres  <- ratio_principal$ratio[!ratio_principal$is_L10]
-
-cat("Lignes PRINCIPAL dans le calcul :", nrow(ratio_principal), "\n")
-cat("Ratio ligne 10     :", round(ratio_L10, 3), "montees/km\n")
-cat("Mediane autres PRINCIPAL :", round(median(ratio_autres), 3), "montees/km\n")
-cat("Rang ligne 10 dans PRINCIPAL :",
-    sum(ratio_principal$ratio >= ratio_L10), "sur",
-    nrow(ratio_principal), "(rang croissant)\n\n")
-
-cat("--- Distribution PRINCIPAL (hors L10) ---\n")
-cat("Min :", round(min(ratio_autres), 3),
-    "| Q1 :", round(quantile(ratio_autres, 0.25), 3),
-    "| Med :", round(median(ratio_autres), 3),
-    "| Q3 :", round(quantile(ratio_autres, 0.75), 3),
-    "| Max :", round(max(ratio_autres), 3), "\n\n")
-
-mw_t014c <- wilcox.test(
-  ratio_L10, ratio_autres,
-  alternative = "two.sided",
-  conf.int    = TRUE,
-  conf.level  = 0.95
-)
-
-cat("--- Position dans la distribution PRINCIPAL ---\n")
-cat("Ratio ligne 10        :", round(ratio_L10, 3), "montees/km\n")
-cat("Mediane PRINCIPAL     :", round(median(ratio_autres), 3), "montees/km\n")
-cat("Rang (descendant)     :", sum(ratio_principal$ratio >= ratio_L10),
-    "sur", nrow(ratio_principal), "\n")
-cat("(Test de rang MW calculé — informatif, NON conclusif (n_L10=1) :\n")
-cat(" W =", mw_t014c$statistic,
-    "| p =", format(mw_t014c$p.value, scientific = TRUE), ")\n\n")
-
-cat("--- Analyse descriptive T-014c ---\n")
-cat("Ce qu'on peut observer :\n")
-cat("  - La ligne 10 occupe le rang", sum(ratio_principal$ratio >= ratio_L10),
-    "sur", nrow(ratio_principal), "lignes PRINCIPAL\n")
-cat("  - Son ratio (", round(ratio_L10, 3), "montees/km) est",
-    ifelse(ratio_L10 < median(ratio_autres), "sous", "au-dessus de"),
-    "la mediane (", round(median(ratio_autres), 3), "montees/km)\n", sep = "")
-cat("  - C'est un constat de position relative, pas un ecart statistiquement prouve\n")
-cat("Ce qu'on NE peut PAS affirmer :\n")
-cat("  - Que la position de la ligne 10 est significativement differente\n")
-cat("    du reste du groupe PRINCIPAL (n=1 : test de rang non interpretable)\n")
-cat("  - Que la performance est due a la competition CFF — cette\n")
-cat("    hypothese est interpretative et non testable avec ces donnees\n")
-cat("  - Que le profil horaire est atypique — LIMITE DOCUMENTEE :\n")
-cat("    pas de donnees horaires par ligne dans les datasets disponibles\n")
-cat("  - Que les voyageurs sont des passagers aeroportuaires plutot\n")
-cat("    que des employes de l'aeroport — pas de donnees OD\n")
-
-# [TPG] La ligne 10 est le seul cas du réseau avec un concurrent externe fixe
-# et connu (CFF Cornavin-Aéroport ≈ 5 min, ~5 CHF). Le rang modeste (#10)
-# de la ligne peut s'expliquer par : (1) préférence passagers pour le train
-# (plus rapide, plus fréquent), (2) zone de chalandise de la ligne 10 = quartiers
-# résidentiels (Sécheron, Varembé, Pregny-Chambésy) plutôt que le seul aéroport.
-# Une analyse OD (Origine-Destination) permettrait de distinguer les deux.
-
-# --- 4.5 Test T-014d : interaction VACANCES — ligne 10 vs réseau PRINCIPAL ---
-# H0 : ratio VACANCES/NORMAL L10 = ratio VACANCES/NORMAL autres PRINCIPAL
-# H1 : différent (bilatéral)
-# Signal interprétable : si L10 perd MOINS en vacances -> usage employes dominant
-#                        si L10 perd PLUS en vacances  -> usage voyageurs dominant
-# Note : n_L10=1 — même limite que T-014c, résultat purement descriptif.
-
-cat("\n=== T-014d — INTERACTION VACANCES : ligne 10 vs PRINCIPAL ===\n")
-cat("H0 : ratio VACANCES/NORMAL L10 = ratio VACANCES/NORMAL autres PRINCIPAL\n")
-cat("H1 : different (bilateral) | LIMITE : n_L10=1 — descriptif uniquement\n\n")
-
-ratio_vn_ligne <- journalier %>%
-  filter(ligne_type_act == "PRINCIPAL",
-         !ligne %in% exclus14,
-         horaire_type %in% c("NORMAL", "VACANCES")) %>%
-  group_by(ligne, date, horaire_type) %>%
+par_mois <- horaire %>%
+  mutate(mois = floor_date(date, "month"),
+         plage = case_when(heure %in% 1:3 & indice_jour_semaine %in% JOURS_WEEKEND ~ "nuit",
+                           heure %in% 1:3                                          ~ "nuit_semaine",
+                           heure >= 6                                              ~ "jour",
+                           TRUE                                                    ~ NA_character_)) %>%
+  filter(!is.na(plage)) %>%
+  group_by(mois, plage) %>%
   summarise(montees = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
-  group_by(ligne, horaire_type) %>%
-  summarise(med = median(montees, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = horaire_type, values_from = med,
-              names_prefix = "med_") %>%
-  filter(!is.na(med_NORMAL), !is.na(med_VACANCES), med_NORMAL > 0) %>%
-  mutate(ratio_vn = med_VACANCES / med_NORMAL,
-         is_L10   = ligne == "10")
+  pivot_wider(names_from = plage, values_from = montees, values_fill = 0) %>%
+  mutate(weekends = sapply(mois, samedis_du_mois),
+         nuit_par_weekend = nuit / weekends,
+         annee = year(mois), mn = month(mois))
 
-ratio_vn_L10_d    <- ratio_vn_ligne$ratio_vn[ratio_vn_ligne$is_L10]
-ratio_vn_autres_d <- ratio_vn_ligne$ratio_vn[!ratio_vn_ligne$is_L10]
-
-cat("Lignes dans le calcul :", nrow(ratio_vn_ligne), "\n")
-cat("Distribution ratio VACANCES/NORMAL PRINCIPAL (hors L10) :\n")
-cat("  Min :", round(min(ratio_vn_autres_d), 3),
-    "| Q1 :", round(quantile(ratio_vn_autres_d, 0.25), 3),
-    "| Med :", round(median(ratio_vn_autres_d), 3),
-    "| Q3 :", round(quantile(ratio_vn_autres_d, 0.75), 3),
-    "| Max :", round(max(ratio_vn_autres_d), 3), "\n")
-cat("  Ligne 10 :", round(ratio_vn_L10_d, 3),
-    ifelse(ratio_vn_L10_d > median(ratio_vn_autres_d),
-           "(plus stable que mediane PRINCIPAL en vacances)",
-           "(moins stable que mediane PRINCIPAL en vacances)"), "\n\n")
-
-if (length(ratio_vn_L10_d) == 1 && length(ratio_vn_autres_d) >= 3) {
-  mw_t014d <- wilcox.test(ratio_vn_L10_d, ratio_vn_autres_d,
-                           alternative = "two.sided",
-                           conf.int    = TRUE,
-                           conf.level  = 0.95)
-
-  n_t014d <- length(ratio_vn_L10_d) + length(ratio_vn_autres_d)
-  z_t014d <- qnorm(mw_t014d$p.value / 2)
-  r_t014d <- abs(z_t014d) / sqrt(n_t014d)
-
-  cat("Test de rang MW (informatif, n_L10=1, NON conclusif) :\n")
-  cat("  W =", mw_t014d$statistic,
-      "| p =", format(mw_t014d$p.value, scientific = TRUE),
-      "| r =", round(r_t014d, 3), "\n\n")
-
-  cat("--- Analyse descriptive T-014d ---\n")
-  cat("Ce qu'on peut observer :\n")
-  if (ratio_vn_L10_d > median(ratio_vn_autres_d)) {
-    cat("  - La ligne 10 perd proportionnellement MOINS de voyageurs\n")
-    cat("    en vacances que la mediane des lignes PRINCIPAL\n")
-    cat("  - Signal compatible avec un usage employes dominant (stable en vacances)\n")
-    cat("  - Ratio L10 :", round(ratio_vn_L10_d, 3),
-        "vs mediane PRINCIPAL :", round(median(ratio_vn_autres_d), 3), "\n")
-  } else {
-    cat("  - La ligne 10 perd proportionnellement PLUS de voyageurs\n")
-    cat("    en vacances que la mediane des lignes PRINCIPAL\n")
-    cat("  - Signal compatible avec un usage voyageurs/touristes dominant\n")
-    cat("  - Ratio L10 :", round(ratio_vn_L10_d, 3),
-        "vs mediane PRINCIPAL :", round(median(ratio_vn_autres_d), 3), "\n")
-  }
-  cat("Ce qu'on NE peut PAS affirmer :\n")
-  cat("  - Que cette difference est statistiquement prouvee (n=1)\n")
-  cat("  - Que l'usage est compose uniquement d'employes OU de voyageurs :\n")
-  cat("    les deux coexistent sur la ligne — pas de donnees OD disponibles\n")
-} else {
-  cat("Donnees insuffisantes pour T-014d\n")
-  mw_t014d <- list(p.value = NA, estimate = NA, conf.int = c(NA, NA))
-  r_t014d  <- NA
+comparer <- function(a_ref, a_test, col) {
+  x <- par_mois %>% filter(annee == a_ref, mn <= 11)
+  y <- par_mois %>% filter(annee == a_test, mn <= 11)
+  cm <- inner_join(x, y, by = "mn", suffix = c("_r", "_t"))
+  v  <- 100 * (cm[[paste0(col, "_t")]] / cm[[paste0(col, "_r")]] - 1)
+  w  <- suppressWarnings(wilcox.test(cm[[paste0(col, "_t")]],
+                                     cm[[paste0(col, "_r")]], paired = TRUE))
+  list(n = nrow(cm), var_mediane = round(median(v), 1),
+       mois_en_hausse = sum(v > 0), p = w$p.value)
 }
 
-# [TPG] T-014d : si ratio_vn_L10 > mediane PRINCIPAL, la ligne 10 fonctionne
-# davantage en mode "navette employes" que "navette voyageurs". Implication :
-# elle ne doit pas être dimensionnée sur des pics touristiques estivaux mais
-# sur des horaires de travail stables toute l'année.
+nuit_2324 <- comparer(2023, 2024, "nuit_par_weekend")
+jour_2324 <- comparer(2023, 2024, "jour")
+nuit_2223 <- comparer(2022, 2023, "nuit_par_weekend")
+jour_2223 <- comparer(2022, 2023, "jour")
 
-# =============================================================================
-# 5. VISUALISATIONS
-# NOTE VIZ : candidats Python / Power BI final
-# =============================================================================
+cat("\n=== T-014b : MONTÉES ENTRE 1H ET 4H, AVANT ET APRÈS LE 10.12.2023 ===\n")
+cat("Nuits du vendredi et du samedi. Janvier à novembre, apparié mois par mois,\n")
+cat("variation médiane :\n")
+cat(sprintf("  2023 vers 2024 | nuit par week-end : %+.1f %% (%d mois sur %d en hausse) | jour : %+.1f %%\n",
+            nuit_2324$var_mediane, nuit_2324$mois_en_hausse, nuit_2324$n, jour_2324$var_mediane))
+cat(sprintf("  2022 vers 2023 | nuit par week-end : %+.1f %% | jour : %+.1f %%  (année sans changement de réseau)\n",
+            nuit_2223$var_mediane, jour_2223$var_mediane))
+effet_net    <- round(nuit_2324$var_mediane - jour_2324$var_mediane, 1)
+ecart_temoin <- round(nuit_2223$var_mediane - jour_2223$var_mediane, 1)
+effet_dd     <- round(effet_net - ecart_temoin, 1)
+cat("Écart nuit moins jour, année du nouveau réseau :", effet_net, "points\n")
+cat("Écart nuit moins jour, année témoin            :", ecart_temoin, "points\n")
+cat("Différence des deux écarts                     :", effet_dd, "points\n")
+cat("Lecture : en année sans changement de réseau, la nuit évolue comme\n")
+cat("le jour à quelques points près. En 2024, elle s'en détache nettement.\n")
+cat("C'est l'ordre de grandeur attribuable au nouveau réseau de nuit, sous\n")
+cat("réserve que rien d'autre n'ait changé la nuit cette année-là.\n")
 
-# --- VIZ 1 : Série temporelle Noctambus 2016-2023 avec annotations ---
-# NOTE VIZ : serie avec ruptures — narrative COVID + absorption
+# S-34 : DISTRIBUTION PLACEBO SUR LES HEURES.
+# Les données horaires commencent en 2019 : trop peu de paires
+# d'années hors COVID pour un placebo dans le temps. On applique donc
+# exactement le même calcul (vendredis et samedis, par week-end,
+# écart au jour, différence avec l'année témoin) à chaque heure de
+# 6h à 23h, qu'aucun changement de réseau de nuit ne concerne.
+# Les heures 0h, 4h et 5h sont exclues : le prolongement nocturne
+# des lignes de jour peut les toucher.
+# Réserve : les heures de jour ont bien plus de montées que la nuit,
+# donc moins de bruit. Le placebo sous-estime un peu la variabilité
+# naturelle de la nuit.
 
-p_nocta <- ggplot(nocta_mensuel, aes(x = date, y = montees_tot / 1000)) +
-  geom_line(color = TPG_RED, linewidth = 0.8) +
-  geom_area(fill = TPG_RED, alpha = 0.12) +
-  geom_vline(xintercept = as.Date("2020-03-01"),
-             linetype = "dotted", color = COL_COVID, linewidth = 0.9) +
-  geom_vline(xintercept = as.Date("2021-06-01"),
-             linetype = "dotted", color = COL_NEUTRE, linewidth = 0.7) +
-  geom_vline(xintercept = as.Date("2023-12-01"),
-             linetype = "dashed", color = COL_REF, linewidth = 1) +
-  annotate("text", x = as.Date("2020-04-01"),
-           y = max(nocta_mensuel$montees_tot / 1000) * 0.95,
-           label = "COVID", hjust = 0, size = 2.8, color = COL_COVID) +
-  annotate("text", x = as.Date("2021-08-01"),
-           y = max(nocta_mensuel$montees_tot / 1000) * 0.80,
-           label = "Sortie crise", hjust = 0, size = 2.5, color = COL_NEUTRE) +
-  annotate("text", x = as.Date("2023-10-01"),
-           y = max(nocta_mensuel$montees_tot / 1000) * 0.95,
-           label = "Absorption\ndec 2023", hjust = 1, size = 2.8, color = COL_REF) +
-  annotate("text",
-           x = as.Date("2017-01-01"),
-           y = max(nocta_mensuel$montees_tot / 1000) * 0.60,
-           label = paste0("Recup. 2023 vs 2019 : ",
-                          round(mois_finaux / ref_2019 * 100, 1), "%"),
-           hjust = 0, size = 3, color = COL_NEUTRE) +
-  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
-  scale_y_continuous(labels = label_number(suffix = "k")) +
-  labs(
-    title    = "Noctambus REGIONAL — trajectoire 2016-2023",
-    subtitle = "Montees mensuelles | Absorption dans le reseau regulier en dec 2023",
-    x        = NULL,
-    y        = "Montees (milliers)",
-    caption  = "Source : opendata.tpg.ch | Frat DAG 2026"
-  ) +
-  theme_tpg()
+HEURES_PLACEBO <- 6:23
 
-ggsave(here::here("figures/14_noctambus_serie_temporelle.png"),
-       p_nocta, width = 12, height = 6, dpi = 150)
-cat("\nGraphique sauvegarde : figures/14_noctambus_serie_temporelle.png\n")
+difference_heure <- function(heures) {
+  d <- horaire %>%
+    filter(heure %in% heures, indice_jour_semaine %in% JOURS_WEEKEND) %>%
+    group_by(mois = floor_date(date, "month")) %>%
+    summarise(x = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+    mutate(x = x / sapply(mois, samedis_du_mois)) %>%
+    inner_join(par_mois %>% select(mois, jour), by = "mois") %>%
+    mutate(annee = year(mois), mn = month(mois))
+  v <- function(a_ref, a_test, col) {
+    cm <- inner_join(d %>% filter(annee == a_ref, mn <= 11),
+                     d %>% filter(annee == a_test, mn <= 11),
+                     by = "mn", suffix = c("_r", "_t"))
+    median(100 * (cm[[paste0(col, "_t")]] / cm[[paste0(col, "_r")]] - 1))
+  }
+  (v(2023, 2024, "x") - v(2023, 2024, "jour")) - (v(2022, 2023, "x") - v(2022, 2023, "jour"))
+}
 
-# --- VIZ 2 : Évolution mensuelle ligne 10 vs réseau PRINCIPAL ---
-# NOTE VIZ : comparaison recupération COVID L10 vs reseau
+placebo_heures <- data.frame(heure = HEURES_PLACEBO,
+                             difference = round(sapply(HEURES_PLACEBO, difference_heure), 1))
+diff_traitee <- round(difference_heure(1:3), 1)
+rang_nuit <- sum(placebo_heures$difference >= diff_traitee) + 1
+p_placebo <- round(rang_nuit / (nrow(placebo_heures) + 1), 3)
+max_abs_placebo <- max(abs(placebo_heures$difference))
 
-# Réseau PRINCIPAL mensuel (agrégé)
-principal_mensuel <- mensuel %>%
-  filter(ligne_type_act == "PRINCIPAL") %>%
-  group_by(date) %>%
-  summarise(montees_tot = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
-  arrange(date)
+cat("\n=== S-34 : T-014b, DISTRIBUTION PLACEBO SUR LES HEURES ===\n")
+cat("Différence des écarts au jour (2024 contre 2023, moins 2023 contre 2022),\n")
+cat("vendredis et samedis, en points, heure par heure :\n")
+print(as.data.frame(t(setNames(placebo_heures$difference, paste0(placebo_heures$heure, "h")))),
+      row.names = FALSE)
+cat("\nHeures placebo :", nrow(placebo_heures), "| plage : de",
+    min(placebo_heures$difference), "à", max(placebo_heures$difference),
+    "points | écart-type :", round(sd(placebo_heures$difference), 1), "\n")
+cat("Plage 1h à 4h :", diff_traitee, "points | rang", rang_nuit, "sur",
+    nrow(placebo_heures) + 1, "| p placebo =", p_placebo, "\n")
+cat("La plage de nuit vaut", round(diff_traitee / max_abs_placebo, 1),
+    "fois la plus grande valeur placebo en valeur absolue.\n")
+cat("Avec ", nrow(placebo_heures), " heures placebo, p ne peut pas descendre sous ",
+    round(1 / (nrow(placebo_heures) + 1), 3), ".\n", sep = "")
 
-# Normaliser sur base 100 = moyenne 2019
-base_L10      <- mean(ligne10_mensuel$montees_tot[year(ligne10_mensuel$date) == 2019],
-                       na.rm = TRUE)
-base_principal <- mean(principal_mensuel$montees_tot[year(principal_mensuel$date) == 2019],
-                        na.rm = TRUE)
+cat("\nAutres nuits (dimanche à jeudi), montées de 1h à 4h par mois :\n")
+print(as.data.frame(par_mois %>%
+  filter(mois >= as.Date("2025-06-01")) %>%
+  transmute(mois = format(mois, "%m.%Y"), nuits_de_semaine = round(nuit_semaine))),
+  row.names = FALSE)
+cat("Ces montées restent faibles jusqu'en novembre 2025 puis augmentent\n")
+cat("nettement : l'offre de nuit en semaine a changé. Elles sont exclues\n")
+cat("de T-014b et de la figure, qui portent sur les nuits de fin de semaine.\n")
 
-evol_compare <- bind_rows(
-  ligne10_mensuel   %>% mutate(serie = "Ligne 10",     idx = montees_tot / base_L10 * 100),
-  principal_mensuel %>% mutate(serie = "PRINCIPAL",    idx = montees_tot / base_principal * 100)
+# Réplication de l'annonce des tpg sur l'année civile (toutes les nuits,
+# comme l'annonce)
+civil <- horaire %>%
+  filter(heure %in% 1:3, year(date) %in% c(2023, 2024)) %>%
+  group_by(annee = year(date)) %>%
+  summarise(t = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+gain_abs <- civil$t[civil$annee == 2024] - civil$t[civil$annee == 2023]
+gain_pct <- round(100 * (civil$t[civil$annee == 2024] / civil$t[civil$annee == 2023] - 1), 1)
+
+cat("\nRéplication de l'annonce des tpg (années civiles, 1h à 4h) :\n")
+cat("  Gain absolu 2024 contre 2023 :", format(round(gain_abs), big.mark = " "),
+    "montées (annonce : 110 000)\n")
+cat("  Variation relative :", gain_pct, "% (annonce : +21,6 %)\n")
+cat("Le gain absolu est retrouvé. Le pourcentage diffère : les tpg le\n")
+cat("rapportent à une base plus petite, que ces données ne permettent\n")
+cat("pas de reconstituer. Question transmise aux tpg (Q-06).\n")
+
+# Pourquoi le melange 0h-5h d'avril sous-estimait l'effet
+melange <- horaire %>%
+  filter(heure %in% 0:5, year(date) %in% c(2023, 2024)) %>%
+  group_by(annee = year(date)) %>%
+  summarise(t = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+cat("\nAvec les heures 0 à 5 mélangées (méthode d'avril) :",
+    round(100 * (melange$t[2] / melange$t[1] - 1), 1),
+    "%. Les heures 0h et 5h, qui relèvent du service de jour, diluent l'effet.\n")
+
+cat("\nAu-delà de 2024, d'autres changements d'offre interviennent\n")
+cat("(lignes nocturnes ajoutées au 15.12.2024, nuits de semaine visibles\n")
+cat("depuis décembre 2025). La comparaison est donc limitée à 2023 contre 2024.\n")
+
+enregistrer(
+  test_id = "T-014b", script = "14_noctambus_ligne10.R",
+  methode = "Montées 1h-4h des nuits du vendredi et du samedi, par week-end, janvier-novembre 2023 contre 2024, apparié par mois, contrôlé par le jour",
+  n = nuit_2324$n, statistique = NA, p_value = NA,
+  effet_nom = "variation médiane nuit par week-end (%)", effet = nuit_2324$var_mediane,
+  note = paste0("Jour : ", jour_2324$var_mediane, " %. Écart nuit moins jour : ",
+                effet_net, " points (année témoin : ", ecart_temoin,
+                ", différence : ", effet_dd, "). Placebo sur ", nrow(placebo_heures),
+                " heures de 6h à 23h (S-34) : de ", min(placebo_heures$difference), " à ",
+                max(placebo_heures$difference), " points, nuit rang ", rang_nuit,
+                ", p placebo ", p_placebo, ". Nuits de semaine exclues (S-36). ",
+                "Année civile, toutes nuits : +", format(round(gain_abs), big.mark = " "),
+                " montées (annonce tpg : 110 000), ", gain_pct,
+                " % (annonce : 21,6 %). Heures 0-5 mélangées : sous-estimation (S-09).")
 )
 
-p_L10_evo <- ggplot(evol_compare,
-                    aes(x = date, y = idx, color = serie, linewidth = serie)) +
-  geom_line(alpha = 0.85) +
-  geom_hline(yintercept = 100, linetype = "dashed",
-             color = COL_NEUTRE, linewidth = 0.5) +
-  geom_vline(xintercept = as.Date("2020-03-01"),
-             linetype = "dotted", color = COL_COVID, linewidth = 0.8) +
-  geom_vline(xintercept = as.Date("2025-01-01"),
-             linetype = "dotted", color = COL_GRATUITE, linewidth = 0.8) +
-  annotate("text", x = as.Date("2020-05-01"), y = 115,
-           label = "COVID", hjust = 0, size = 2.8, color = COL_COVID) +
-  annotate("text", x = as.Date("2025-02-01"), y = 115,
-           label = "Gratuite\njeunes", hjust = 0, size = 2.8, color = COL_GRATUITE) +
-  scale_color_manual(values = c("Ligne 10" = "#4A6FA5", "PRINCIPAL" = TPG_RED)) +
-  scale_linewidth_manual(values = c("Ligne 10" = 1.2, "PRINCIPAL" = 0.7),
-                         guide = "none") +
+# ── 5. LIGNE 10 (DESCRIPTIF) ────────────────────────────────
+# Avec une seule ligne d'un côté, aucun test n'a de sens : on situe
+# la ligne 10 dans la distribution des lignes principales.
+# La version d'avril avançait une explication (concurrence du train
+# vers l'aéroport). Elle n'est pas testable avec ces données et
+# n'est pas reprise comme conclusion.
+
+principal <- mensuel %>% filter(ligne_type_act == "PRINCIPAL")
+
+reprise <- principal %>%
+  mutate(annee = year(date)) %>%
+  filter(annee %in% c(2019, 2025)) %>%
+  group_by(ligne, annee) %>%
+  summarise(t = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = annee, values_from = t, names_prefix = "a") %>%
+  filter(!is.na(a2019), !is.na(a2025), a2019 > 1e5) %>%
+  mutate(pct = round(100 * (a2025 / a2019 - 1), 1)) %>%
+  arrange(pct)
+
+rang_10 <- which(reprise$ligne == "10")
+cat("\n=== T-014c : LIGNE 10, 2025 CONTRE 2019 ===\n")
+cat("Lignes principales comparables :", nrow(reprise), "\n")
+if (length(rang_10) == 1) {
+  cat("Ligne 10 :", reprise$pct[rang_10], "% | rang", rang_10, "sur",
+      nrow(reprise), "(1 = plus faible reprise)\n")
+  cat("Médiane des lignes principales :", median(reprise$pct), "%\n")
+}
+
+vac <- journalier %>%
+  filter(ligne_type_act == "PRINCIPAL", horaire_type %in% c("NORMAL", "VACANCES")) %>%
+  group_by(ligne, date, horaire_type) %>%
+  summarise(t = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+  group_by(ligne, horaire_type) %>%
+  summarise(med = median(t), .groups = "drop") %>%
+  pivot_wider(names_from = horaire_type, values_from = med) %>%
+  filter(!is.na(NORMAL), !is.na(VACANCES), NORMAL > 1000) %>%
+  mutate(ratio = round(VACANCES / NORMAL, 3)) %>%
+  arrange(desc(ratio))
+
+rang_v <- which(vac$ligne == "10")
+cat("\n=== T-014d : LIGNE 10, RAPPORT VACANCES / JOURS NORMAUX ===\n")
+if (length(rang_v) == 1) {
+  cat("Ligne 10 :", vac$ratio[rang_v], "| rang", rang_v, "sur", nrow(vac),
+      "(1 = fréquentation la mieux maintenue en vacances)\n")
+  cat("Médiane des lignes principales :", median(vac$ratio), "\n")
+}
+cat("Lecture descriptive : une ligne qui dessert l'aéroport perd moins\n")
+cat("en vacances si ses usagers ne sont pas liés au calendrier scolaire.\n")
+cat("Les données ne permettent pas de vérifier qui sont ces usagers.\n")
+
+enregistrer(
+  test_id = "T-014c", script = "14_noctambus_ligne10.R",
+  methode = "Descriptif : rang de la ligne 10 parmi les lignes principales, 2025 contre 2019",
+  n = nrow(reprise), statistique = NA, p_value = NA,
+  effet_nom = "variation 2025 contre 2019 (%)",
+  effet = if (length(rang_10) == 1) reprise$pct[rang_10] else NA,
+  note = paste0("Rang ", rang_10, " sur ", nrow(reprise), ". Médiane ", median(reprise$pct), " %.")
+)
+enregistrer(
+  test_id = "T-014d", script = "14_noctambus_ligne10.R",
+  methode = "Descriptif : rapport vacances / jours normaux de la ligne 10 parmi les lignes principales",
+  n = nrow(vac), statistique = NA, p_value = NA,
+  effet_nom = "rapport vacances / normal",
+  effet = if (length(rang_v) == 1) vac$ratio[rang_v] else NA,
+  note = paste0("Rang ", rang_v, " sur ", nrow(vac), ". Médiane ", median(vac$ratio), ".")
+)
+
+# ── 6. FIGURES ──────────────────────────────────────────────
+# La série Noctambus est tracée avec ses trous : aucune
+# interpolation sur les mois sans service.
+
+nocta_plot <- data.frame(date = attendus) %>% left_join(nocta, by = "date")
+
+p_nocta <- ggplot(nocta_plot, aes(x = date, y = montees / 1e3)) +
+  geom_line(color = ROUGE_PRINCIPAL, linewidth = 0.8, na.rm = FALSE) +
+  geom_vline(xintercept = D_COVID, linetype = "dashed", color = COL_COVID, linewidth = 0.4) +
+  geom_vline(xintercept = D_RESEAU_NUIT, linetype = "dashed", color = COL_NEUTRE, linewidth = 0.4) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
-  annotate("text", x = as.Date("2016-03-01"), y = 63,
-           label = "Base 100 = moyenne 2019", hjust = 0, size = 2.5,
-           color = COL_NEUTRE) +
-  labs(
-    title    = "Ligne 10 vs PRINCIPAL — trajectoire 2016-2026 (base 100 = 2019)",
-    subtitle = "Comparaison recupération COVID et impact gratuité jeunes",
-    x        = NULL,
-    y        = "Indice (100 = moy. 2019)",
-    color    = NULL,
-    caption  = "Source : opendata.tpg.ch | Frat DAG 2026"
-  ) +
-  theme_tpg()
+  labs(title = "Noctambus régional, montées mensuelles",
+       subtitle = paste0(length(lignes_nocta), " lignes régionales (",
+                         paste(lignes_nocta, collapse = ", "),
+                         "). Les interruptions sont des mois sans service.\n",
+                         "Traits : COVID et remplacement par le réseau de nuit le 10.12.2023."),
+       x = NULL, y = "Milliers de montées", caption = SOURCE_TPG) +
+  theme_projet()
 
-ggsave(here::here("figures/14_ligne10_vs_principal.png"),
-       p_L10_evo, width = 12, height = 6, dpi = 150)
-cat("Graphique sauvegarde : figures/14_ligne10_vs_principal.png\n")
+print(p_nocta)
+ggsave(file.path(DIR_FIG, "14_noctambus_regional.png"), p_nocta, width = 12, height = 6, dpi = 150)
 
-# --- VIZ 3 : Boxplot ratio PRINCIPAL + point ligne 10 ---
-# NOTE VIZ : identifier la position relative de la ligne 10 dans PRINCIPAL
+p_nuit <- ggplot(par_mois %>% filter(mois >= as.Date("2022-01-01")),
+                 aes(x = mois, y = nuit_par_weekend / 1e3)) +
+  geom_line(color = ROUGE_PRINCIPAL, linewidth = 0.8) +
+  geom_point(color = ROUGE_PRINCIPAL, size = 1.5) +
+  geom_vline(xintercept = D_RESEAU_NUIT, linetype = "dashed", color = COL_NEUTRE, linewidth = 0.5) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%m.%Y") +
+  labs(title = "Montées entre 1h et 4h, nuits du vendredi et du samedi",
+       subtitle = paste0("Réseau entier, moyenne par week-end. Trait : réseau de nuit du 10.12.2023.\n",
+                         "Janvier à novembre, 2024 contre 2023 : ",
+                         sprintf("%+.1f %%", nuit_2324$var_mediane), " la nuit, ",
+                         sprintf("%+.1f %%", jour_2324$var_mediane), " le jour."),
+       x = NULL, y = "Milliers de montées par week-end", caption = SOURCE_TPG) +
+  theme_projet() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-p_ratio_L10 <- ggplot(ratio_principal %>% filter(!is_L10),
-                       aes(x = "PRINCIPAL\n(hors L10)", y = ratio)) +
-  geom_boxplot(fill = "#4A6FA5", alpha = 0.7, outlier.shape = 21,
-               outlier.fill = "white") +
-  geom_jitter(width = 0.12, alpha = 0.5, size = 2, color = "grey30") +
-  geom_point(data = ratio_principal %>% filter(is_L10),
-             aes(x = "PRINCIPAL\n(hors L10)", y = ratio),
-             color = TPG_RED, size = 5, shape = 18) +
-  geom_text(data = ratio_principal %>% filter(is_L10),
-            aes(x = "PRINCIPAL\n(hors L10)", y = ratio,
-                label = paste0("Ligne 10\n(", round(ratio, 2), " mont./km)")),
-            hjust = -0.15, size = 3, color = TPG_RED) +
-  labs(
-    title    = "Position de la ligne 10 dans le cluster PRINCIPAL",
-    subtitle = paste0(
-      "Ratio montees/km (jours NORMAL) | Rang descriptif : ",
-      sum(ratio_principal$ratio >= ratio_L10), "/", nrow(ratio_principal),
-      " | n_L10=1 — analyse descriptive uniquement"
-    ),
-    x        = NULL,
-    y        = "Montees / km produit",
-    caption  = "Source : opendata.tpg.ch | avr. 2023 -> fev. 2026 | Frat DAG 2026"
-  ) +
-  theme_tpg() +
-  theme(axis.text.x = element_text(angle = 0))
+print(p_nuit)
+ggsave(file.path(DIR_FIG, "14_nuit_1h_4h.png"), p_nuit, width = 12, height = 6, dpi = 150)
+message("Figures enregistrées.")
 
-ggsave(here::here("figures/14_ratio_ligne10_principal.png"),
-       p_ratio_L10, width = 8, height = 6, dpi = 150)
-cat("Graphique sauvegarde : figures/14_ratio_ligne10_principal.png\n")
+# ── 7. SAUVEGARDE ───────────────────────────────────────────
 
-# =============================================================================
-# 6. BILAN SCRIPT 14
-# =============================================================================
+write.csv(annuel_nocta,     file.path(DIR_RES, paste0("14_noctambus_annuel_",   SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(par_mois,         file.path(DIR_RES, paste0("14_nuit_par_mois_",      SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(repartition_nuit, file.path(DIR_RES, paste0("14_nuit_par_jour_",      SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(reprise,          file.path(DIR_RES, paste0("14_principal_reprise_",  SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(vac,              file.path(DIR_RES, paste0("14_principal_vacances_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
 
-cat("\n=== BILAN SCRIPT 14 ===\n\n")
-
-cat("SYN-007 — Noctambus REGIONAL :\n")
-cat("  Serie mensuelle", format(min(nocta_mensuel$date)), "->",
-    format(max(nocta_mensuel$date)), "\n")
-cat("  Recuperation 2023 vs 2019 :", round(mois_finaux / ref_2019 * 100, 1), "%\n")
-cat("  T-014a Bai-Perron + Chow : resultats ci-dessus\n")
-cat("  T-014b MW nocturne : ")
-if (!is.na(mw_t014b$p.value)) {
-  cat("p =", format(mw_t014b$p.value, scientific = TRUE),
-      "| r =", round(r_t014b, 3), "(marginal)\n")
-} else {
-  cat("donnees insuffisantes\n")
-}
-cat("  T-014e declin pre-COVID : ")
-if (!is.na(mw_t014e$p.value)) {
-  cat("p =", format(mw_t014e$p.value, scientific = TRUE), "\n\n")
-} else {
-  cat("non applicable (pas de rupture BP pre-COVID)\n\n")
-}
-
-cat("SYN-008 / IDEE-005 — Ligne 10 aeroport :\n")
-cat("  Rang :", rang_L10$rang, "sur", n_distinct(journalier$ligne), "lignes\n")
-cat("  % reseau :", round(total_L10 / total_reseau * 100, 2), "%\n")
-cat("  Diff NORMAL/VACANCES :", L10_diff, "% (reseau global : -28.2%)\n")
-cat("  T-014c descriptif (n_L10=1) : rang",
-    sum(ratio_principal$ratio >= ratio_L10), "/", nrow(ratio_principal),
-    "| ratio :", round(ratio_L10, 3), "montees/km\n")
-cat("  T-014d interaction vacances : ratio_vn L10 =",
-    if (!is.na(ratio_vn_L10_d)) round(ratio_vn_L10_d, 3) else "NA",
-    "vs mediane PRINCIPAL =",
-    round(median(ratio_vn_autres_d), 3), "\n")
-cat("  LIMITE : profil horaire par ligne non disponible — documente\n\n")
-
-cat("3 graphiques sauvegardes dans figures/\n")
-cat("[TPG] Observations sensibles marquees # [TPG] dans le script\n")
-
-message("Script 14 termine.")
+message("Script 14 terminé. Figures dans figures/, résultats dans resultats/.")

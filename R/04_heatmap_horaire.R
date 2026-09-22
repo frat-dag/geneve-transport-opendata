@@ -1,56 +1,53 @@
 # ============================================================
-# SCRIPT 04 — HEATMAP HORAIRE
-# Projet : TPG Open Data Analysis
+# SCRIPT 04 - HEATMAP HORAIRE ET TEST T-003
 # Auteur : Frat DAG
-# Date   : avril 2026
+# Corrections : R-01, R-02, R-05, R-07, R-09, T-06, S-10, S-13
 # ------------------------------------------------------------
-# OBJECTIF : Analyser les patterns de fréquentation par heure
-# et par jour de semaine. Produire la heatmap de référence.
-# Ce qu'on sait déjà (script 00) :
-#   - Dataset horaire : 61 826 lignes, jan 2019 → avr 2026
-#   - Filtre donnees_definitives == TRUE obligatoire
-#   - Filtre !is.na(horaire_tranche_stop_theo) — 2.3% NA
-#   - Filtre horaire_type : inclure NORMAL, SAMEDI, DIMANCHE
-#   - Tests à intégrer : T-003 (pic soir vs matin)
+# OBJECTIF : patterns de fréquentation heure x jour de semaine.
+# T-003 : test Wilcoxon apparié pic soir (17h) vs pic matin (8h).
+# SOURCE : dataset horaire (réseau global, par tranche horaire).
+# NOTE horaire_tranche_stop_theo : character "00"-"23" + "-" (NA).
+# NOTE S-13 : T-003 teste le réseau global. L'assertion "partout,
+# tout le temps" n'est pas testée par ligne, limite documentée.
 # ============================================================
 
-# ── 1. NETTOYAGE ET PACKAGES ─────────────────────────────────
-
-rm(list = ls())
-gc()
-
-# Définir le répertoire de travail — adapter selon votre environnement
-# setwd("chemin/vers/tpg-opendata-analysis/R")
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(scales)
-library(viridis)   # palette heatmap
+library(viridis)
+library(tidyr)
 
-# ── 2. CHARGEMENT ───────────────────────────────────────────
+# ── 1. CHARGEMENT ───────────────────────────────────────────
+# lire() applique donnees_definitives et date <= DATE_COUPURE.
 
-horaire <- readRDS("../data/raw/horaire.rds")
+horaire_raw <- readRDS(file.path(DIR_RAW, "horaire.rds"))
+horaire     <- lire("horaire")
 
-cat("Dimensions brutes :", nrow(horaire), "lignes x",
-    ncol(horaire), "colonnes\n")
-cat("Période           :", format(min(horaire$date)),
-    "→", format(max(horaire$date)), "\n")
-cat("Colonnes          :", paste(names(horaire), collapse = ", "), "\n")
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Lignes brutes              :", nrow(horaire_raw), "\n")
+cat("Lignes après lire()        :", nrow(horaire),
+    "(définitives + coupure)\n")
+cat("Période :", format(min(horaire$date)), "à",
+    format(max(horaire$date)), "\n")
+cat("Colonnes :", paste(names(horaire), collapse = ", "), "\n\n")
+rm(horaire_raw)
 
-# ── 3. FILTRE QUALITÉ ────────────────────────────────────────
+# ── 2. FILTRE QUALITE ───────────────────────────────────────
 
 n_avant <- nrow(horaire)
 
 horaire <- horaire %>%
-  filter(donnees_definitives == TRUE) %>%
-  filter(!is.na(horaire_tranche_stop_theo)) %>%
+  # "-" encode les valeurs manquantes de horaire_tranche_stop_theo
+  filter(horaire_tranche_stop_theo != "-") %>%
   filter(horaire_type %in% c("NORMAL", "SAMEDI", "DIMANCHE",
-                             "VACANCES", "FERIE")) %>%
+                              "VACANCES", "FERIE")) %>%
   mutate(
     heure = as.integer(horaire_tranche_stop_theo),
+    # Pour SAMEDI/DIMANCHE, horaire_type prime sur le calendrier
     jour  = case_when(
       horaire_type == "SAMEDI"   ~ "Samedi",
       horaire_type == "DIMANCHE" ~ "Dimanche",
@@ -59,31 +56,28 @@ horaire <- horaire %>%
   ) %>%
   filter(!is.na(heure))
 
-n_apres <- nrow(horaire)
-
-cat("Avant filtre :", n_avant, "\n")
-cat("Après filtre :", n_apres, "\n")
-cat("Exclus       :", n_avant - n_apres,
-    "(", round((n_avant - n_apres) / n_avant * 100, 1), "%)\n")
-
+cat("Avant filtres supplémentaires :", n_avant, "\n")
+cat("Après                         :", nrow(horaire),
+    "| exclus :", n_avant - nrow(horaire),
+    "(", round(100 * (n_avant - nrow(horaire)) / n_avant, 1), "% )\n")
 cat("\nTypes horaire présents :\n")
 print(table(horaire$horaire_type))
-
 cat("\nJours présents :\n")
 print(table(horaire$jour))
 
-# ── 4. AGRÉGATION HEURE × JOUR ──────────────────────────────
-# Objectif : médiane des montées par combinaison heure × jour
-# Pourquoi la médiane et pas la moyenne ?
-# La moyenne est sensible aux jours atypiques (grèves, événements)
-# La médiane représente le "jour typique ordinaire" — plus robuste
+PERIODE_TXT <- paste(format(min(horaire$date), "%d.%m.%Y"),
+                     "au", format(max(horaire$date), "%d.%m.%Y"))
 
-# Ordre des jours pour l'affichage
+# ── 3. AGRÉGATION HEURE x JOUR ──────────────────────────────
+# Médiane : robuste aux jours atypiques (grèves, événements).
+# Heures 5h-23h : la nuit profonde (0h-4h) est analysée séparément
+# dans le script 14 (Noctambus).
+
 ordre_jours <- c("Lundi", "Mardi", "Mercredi", "Jeudi",
                  "Vendredi", "Samedi", "Dimanche")
 
 heatmap_data <- horaire %>%
-  filter(heure >= 5 & heure <= 23) %>%  # exclure nuit profonde
+  filter(heure >= 5 & heure <= 23) %>%
   group_by(heure, jour) %>%
   summarise(
     mediane_montees = median(nb_de_montees, na.rm = TRUE),
@@ -92,45 +86,35 @@ heatmap_data <- horaire %>%
   ) %>%
   mutate(jour = factor(jour, levels = ordre_jours))
 
-cat("Dimensions heatmap_data :", nrow(heatmap_data), "lignes\n")
-cat("Heures couvertes        : 5h à 23h\n")
-cat("Combinaisons jour×heure :", n_distinct(heatmap_data$jour),
-    "jours ×", n_distinct(heatmap_data$heure), "heures\n")
+cat("\nCombinaisons heure x jour :", nrow(heatmap_data),
+    "(", n_distinct(heatmap_data$heure), "heures x",
+    n_distinct(heatmap_data$jour), "jours )\n")
 
-# Aperçu des valeurs max
-cat("\nTop 5 combinaisons heure×jour :\n")
-heatmap_data %>%
-  arrange(desc(mediane_montees)) %>%
-  head(5) %>%
-  print()
+cat("\nTop 5 combinaisons :\n")
+print(as.data.frame(heatmap_data %>%
+  arrange(desc(mediane_montees)) %>% head(5)))
 
-# ── 5. HEATMAP HEURE × JOUR ─────────────────────────────────
-# NOTE VIZ : graphique de référence du projet — version finale Python
+# ── 4. FIGURE 1 : HEATMAP ───────────────────────────────────
 
 p_heatmap <- ggplot(heatmap_data,
                     aes(x = jour,
                         y = factor(heure, levels = rev(5:23)),
                         fill = mediane_montees)) +
   geom_tile(color = "white", linewidth = 0.3) +
-  
   scale_fill_viridis_c(
-    option  = "magma",
-    name    = "Médiane\nmontées",
-    labels  = label_number(suffix = "k", scale = 1e-3)
+    option = "magma",
+    name   = "Médiane\nmontées",
+    labels = label_number(suffix = "k", scale = 1e-3)
   ) +
-  
-  scale_y_discrete(
-    labels = function(x) paste0(x, "h")
-  ) +
-  
+  scale_y_discrete(labels = function(x) paste0(x, "h")) +
   labs(
-    title    = "Heatmap de fréquentation TPG — heure × jour",
-    subtitle = "Médiane des montées par tranche horaire — jours NORMAL, SAMEDI, DIMANCHE",
-    x        = NULL,
-    y        = "Heure",
-    caption  = "Source : TPG Open Data | jan. 2019 → avr. 2026"
+    title    = "Heatmap de fréquentation, heure x jour",
+    subtitle = paste0("Médiane des montées par tranche horaire, ",
+                     PERIODE_TXT, ", données définitives"),
+    x        = NULL, y = "Heure",
+    caption  = SOURCE_TPG
   ) +
-  theme_tpg() +
+  theme_projet() +
   theme(
     axis.text.x      = element_text(angle = 0, hjust = 0.5),
     panel.grid.major = element_blank(),
@@ -138,111 +122,103 @@ p_heatmap <- ggplot(heatmap_data,
   )
 
 print(p_heatmap)
+ggsave(file.path(DIR_FIG, "04_heatmap_horaire.png"),
+       p_heatmap, width = 12, height = 8, dpi = 150)
+message("Figure 1 enregistrée.")
 
-ggsave("../outputs/04_heatmap_horaire.png",
-       plot = p_heatmap, width = 12, height = 8, dpi = 150)
-
-message("Heatmap sauvegardée.")
-
-# ── 6. TEST T-003 — PIC SOIR (17h) VS PIC MATIN (8h) ────────
-# Hypothèse H1 : médiane montées 17h > médiane montées 8h
-# Test : Wilcoxon signed-rank apparié (unilatéral)
-# Pourquoi apparié ? Matin et soir du MÊME jour — mesures liées
-# Pourquoi unilatéral ? Direction fixée a priori (littérature
-# transports urbains) AVANT de voir les données — sinon p-hacking
-# Pourquoi Wilcoxon et pas t apparié ? Normalité à vérifier d'abord
-
-# On travaille sur jours NORMAL uniquement
-# Raison : T-002 prouve que VACANCES ≠ NORMAL — biais de confusion
-# si on mélange les deux dans un test sur les heures
+# ── 5. T-003 : PIC SOIR (17h) vs PIC MATIN (8h) ────────────
+# Hypothèse H1 pré-spécifiée (avant de voir les données) :
+# montées 17h > montées 8h sur jours NORMAL.
+# Direction fixée a priori (littérature transports urbains) ->
+# test unilatéral défendable.
+#
+# NOTE S-10 / AUTOCORRÉLATION : les jours consécutifs ne sont pas
+# indépendants (un mardi chargé suit souvent un lundi chargé).
+# Le Wilcoxon signed-rank suppose l'indépendance des paires.
+# La p-value extrême produite ici n'a donc pas de sens littéral.
+# On publie l'effet (Hodges-Lehmann, IC, r) pas la p-value.
+#
+# NOTE S-13 : ce test porte sur le réseau agrégé. L'assertion
+# "partout, tout le temps" resterait à tester par ligne.
 
 pic_data <- horaire %>%
-  filter(horaire_type == "NORMAL") %>%
-  filter(heure %in% c(8, 17)) %>%
-  dplyr::select(date, heure, nb_de_montees) %>%
-  tidyr::pivot_wider(names_from  = heure,
-                     values_from = nb_de_montees,
-                     names_prefix = "h") %>%
+  filter(horaire_type == "NORMAL",
+         heure %in% c(8L, 17L)) %>%
+  select(date, heure, nb_de_montees) %>%
+  pivot_wider(names_from   = heure,
+              values_from  = nb_de_montees,
+              names_prefix = "h") %>%
   filter(!is.na(h8) & !is.na(h17))
 
-cat("Nombre de jours appariés :", nrow(pic_data), "\n")
-cat("Médiane h8  :", round(median(pic_data$h8)), "montées\n")
-cat("Médiane h17 :", round(median(pic_data$h17)), "montées\n")
-cat("Ratio h17/h8 :", round(median(pic_data$h17) /
+n_paires <- nrow(pic_data)
+cat("\n=== T-003 : PIC SOIR vs PIC MATIN (jours NORMAL) ===\n")
+cat("Paires (jours) :", n_paires, "\n")
+cat("Médiane  8h :", round(median(pic_data$h8)),  "montées\n")
+cat("Médiane 17h :", round(median(pic_data$h17)), "montées\n")
+cat("Ratio 17h/8h :", round(median(pic_data$h17) /
                               median(pic_data$h8), 3), "\n")
 
-# Vérification normalité des différences
-diff_h <- pic_data$h17 - pic_data$h8
-cat("\nTest de normalité des différences (Shapiro-Wilk) :\n")
-shapiro_res <- shapiro.test(diff_h)
-cat("W =", round(shapiro_res$statistic, 3),
-    "p =", format(shapiro_res$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(shapiro_res$p.value < 0.05,
-                "NON normale → Wilcoxon signed-rank justifié",
-                "Normale → t apparié possible"), "\n")
+# Normalite des differences (triviale a rejeter avec n >> 5000)
+diff_h      <- pic_data$h17 - pic_data$h8
+shapiro_res <- shapiro.test(sample(diff_h, min(5000, n_paires)))
+cat("\nShapiro-Wilk (échantillon 5000 max) : W =",
+    round(shapiro_res$statistic, 3),
+    "| p =", format(shapiro_res$p.value, scientific = TRUE), "\n")
+cat("NOTE : avec n >>", n_paires,
+    "Shapiro rejette quasi-mécaniquement. Wilcoxon retenu.\n")
 
-# ── 7. WILCOXON SIGNED-RANK UNILATÉRAL ──────────────────────
-
+# Test
 wilcox_res <- wilcox.test(
-  pic_data$h17,
-  pic_data$h8,
+  pic_data$h17, pic_data$h8,
   paired      = TRUE,
-  alternative = "greater",  # H1 : soir > matin
+  alternative = "greater",
   conf.int    = TRUE,
   conf.level  = 0.95
 )
 
-cat("=== RÉSULTATS T-003 ===\n\n")
-cat("V (statistique)     :", wilcox_res$statistic, "\n")
-cat("p-value             :", format(wilcox_res$p.value,
-                                    scientific = TRUE), "\n")
-cat("Hodges-Lehmann      :", round(wilcox_res$estimate), "montées\n")
-cat("IC 95% borne inf.   :", round(wilcox_res$conf.int[1]), "\n")
-
 # Taille d'effet r = Z / sqrt(N)
-n_paires <- nrow(pic_data)
-Z <- qnorm(wilcox_res$p.value, lower.tail = FALSE)
-r_effet <- Z / sqrt(n_paires)
+Z_score <- qnorm(wilcox_res$p.value, lower.tail = FALSE)
+r_effet <- round(Z_score / sqrt(n_paires), 3)
 
-cat("Taille d'effet r    :", round(r_effet, 3), "\n")
-cat("Magnitude           :", case_when(
-  r_effet >= 0.5 ~ "Grand (≥ 0.5)",
+magnitude <- case_when(
+  r_effet >= 0.5 ~ "Grand (>= 0.5)",
   r_effet >= 0.3 ~ "Moyen (0.3-0.5)",
   r_effet >= 0.1 ~ "Petit (0.1-0.3)",
   TRUE           ~ "Négligeable (< 0.1)"
-), "\n")
+)
 
-# % jours où soir > matin
-pct_soir_sup <- mean(pic_data$h17 > pic_data$h8) * 100
-cat("% jours soir > matin:", round(pct_soir_sup, 1), "%\n")
+pct_soir_sup <- round(100 * mean(pic_data$h17 > pic_data$h8), 1)
 
-# ── 8. BLOC DÉCISION — T-003 ────────────────────────────────
+cat("\n--- Résultats ---\n")
+cat("V (statistique)       :", wilcox_res$statistic, "\n")
+cat("p-value               :", format(wilcox_res$p.value,
+                                       scientific = TRUE), "\n")
+cat("  -> A NE PAS PUBLIER (autocorrélation non corrigée)\n")
+cat("Hodges-Lehmann (diff) :", round(wilcox_res$estimate),
+    "montées\n")
+cat("IC 95% borne inf.     :", round(wilcox_res$conf.int[1]), "\n")
+cat("Taille d'effet r      :", r_effet, "|", magnitude, "\n")
+cat("% jours soir > matin  :", pct_soir_sup, "%\n")
 
-# RÉSULTATS T-003 — Wilcoxon signed-rank apparié unilatéral
-# H1 : montées 17h > montées 8h sur jours NORMAL
-#
-# CE QU'ON PEUT AFFIRMER :
-# - Pic 17h significativement > pic 8h (p = 9.6×10⁻²²⁶)
-# - Différence médiane : +13 807 montées
-# - IC 95% borne inférieure : +13 653 (entièrement positif)
-# - Taille d'effet r = 0.866 — très grand
-# - 99.9% des jours respectent cette asymétrie — quasi-règle absolue
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - Que l'asymétrie est uniforme sur tous les jours de semaine
-#   → le mercredi pourrait faire exception (pic midi → T-005)
-# - Que 8h et 17h sont les vrais pics pour toutes les lignes
-#   → analyse par ligne en Phase 3
-#
-# LIMITE :
-# On compare 8h et 17h spécifiquement — pas les vrais pics absolus
-# par jour. Le vrai pic peut être 7h ou 18h selon le jour.
-#
-# NOTE VIZ : asymétrie matin/soir → graphique profil journalier
-# fort pour publication — "le soir transporte 22% de plus que le matin"
+# ── 6. ENREGISTREMENT T-003 ─────────────────────────────────
+# On publie effet et IC. La p-value est produite ici à titre
+# informatif mais EXCLUE du registre (autocorrélation).
 
-# ── 9. SAUVEGARDE ───────────────────────────────────────────
-ggsave("../outputs/04_heatmap_horaire.png",
-       plot = p_heatmap, width = 12, height = 8, dpi = 150)
+enregistrer(
+  test_id     = "T-003",
+  script      = "04_heatmap_horaire.R",
+  methode     = "Wilcoxon signed-rank apparié unilatéral (h17 > h8, NORMAL)",
+  n           = n_paires,
+  statistique = wilcox_res$statistic,
+  p_value     = NA,   # non publiée : autocorrélation non corrigée
+  effet_nom   = "Hodges-Lehmann",
+  effet       = round(wilcox_res$estimate),
+  ic_inf      = round(wilcox_res$conf.int[1]),
+  ic_sup      = NA,
+  note        = paste0("r = ", r_effet, " (", magnitude,
+                       "). p-value exclue (autocorrélation).",
+                       " % jours soir > matin : ", pct_soir_sup, "%.",
+                       " Réseau global uniquement (S-13).")
+)
 
-message("Script 04 terminé.")
+message("Script 04 terminé. Figures dans figures/, résultats dans resultats/.")

@@ -1,262 +1,297 @@
 # ============================================================
-# SCRIPT 06 — SAISONNALITÉ
-# Projet : TPG Open Data Analysis
+# SCRIPT 06 - SAISONNALITÉ (DECOMPOSITION STL)
 # Auteur : Frat DAG
-# Date   : avril 2026
+# Corrections : R-01, R-02, R-05, R-07, R-09, T-06, S-02, S-06
 # ------------------------------------------------------------
-# OBJECTIF : Décomposer la série temporelle mensuelle en
-# tendance + saisonnalité + résidus (STL).
-# Identifier les effets vacances, été, Noël sur 10 ans.
-# Les résidus STL serviront de base pour T-004b (script 07).
+# OBJECTIF : décomposer la série mensuelle en tendance,
+# saisonnalité et résidus. Produire les séries de travail du
+# script 07.
+#
+# POINT CRITIQUE (S-02) : ce script produit DEUX séries pour le
+# script 07, et elles ne servent pas à la même chose.
+#   - residus       : observée - tendance - saisonnalité.
+#                     La tendance STL (t.window = 13) suit les
+#                     changements de niveau et les absorbe.
+#                     Tester une rupture de niveau sur les résidus
+#                     revient à chercher ce qu'on vient de retirer :
+#                     c'est circulaire. NE PAS UTILISER pour cela.
+#   - desaisonnalisee : observée - saisonnalité.
+#                     La tendance et les changements de niveau y
+#                     sont conservés. C'est la série à utiliser
+#                     pour T-004b et tout test de rupture.
 # ============================================================
 
-# ── 1. NETTOYAGE ET PACKAGES ─────────────────────────────────
-
-rm(list = ls())
-gc()
-
-# Définir le répertoire de travail — adapter selon votre environnement
-# setwd("chemin/vers/tpg-opendata-analysis/R")
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(scales)
-library(stats)     # stl() inclus dans base R
+library(tidyr)
 
-# ── 2. CHARGEMENT ET PRÉPARATION ────────────────────────────
+# ── 1. CHARGEMENT ───────────────────────────────────────────
 
-mensuel <- readRDS("../data/raw/mensuel.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
+mensuel <- lire("mensuel") %>%
   filter(!is.na(ligne)) %>%
-  mutate(
-    date  = ym(mois),
-    ligne = as.character(ligne)
-  )
+  mutate(date = ym(mois)) %>%
+  filter(date <= DATE_COUPURE)
 
-# Agrégation mensuelle globale — même que script 03
 mensuel_global <- mensuel %>%
   group_by(date) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
+  summarise(montees_totales = sum(nb_de_montees, na.rm = TRUE),
+            .groups = "drop") %>%
   arrange(date)
 
-cat("Série mensuelle :", nrow(mensuel_global), "mois\n")
-cat("De :", format(min(mensuel_global$date)),
-    "à :", format(max(mensuel_global$date)), "\n")
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Série mensuelle :", nrow(mensuel_global), "mois, de",
+    format(min(mensuel_global$date)), "à",
+    format(max(mensuel_global$date)), "\n")
 
+# ── 2. VÉRIFICATION DE CONTINUITÉ (S-06) ────────────────────
+# ts() numérote les observations et leur attribue des dates par
+# comptage. Si un mois manque, toutes les dates suivantes sont
+# décalées, et les dates de rupture trouvées ensuite sont fausses.
+# On vérifie donc AVANT de construire la série temporelle.
 
-# ── 3. DÉCOMPOSITION STL ────────────────────────────────────
-# s.window = "periodic" : saisonnalité identique chaque année
-# t.window = 13 : fenêtre de lissage de la tendance (13 mois)
-# robust = TRUE : résistant aux outliers (ex: COVID)
+mois_attendus  <- seq(min(mensuel_global$date),
+                      max(mensuel_global$date), by = "month")
+mois_manquants <- mois_attendus[!mois_attendus %in% mensuel_global$date]
+
+cat("Mois attendus :", length(mois_attendus),
+    "| présents :", nrow(mensuel_global),
+    "| manquants :", length(mois_manquants), "\n")
+
+if (length(mois_manquants) > 0) {
+  print(mois_manquants)
+  stop("Série discontinue : ts() attribuerait de fausses dates. ",
+       "Compléter la série ou utiliser une méthode robuste aux trous.")
+}
+
+annee_debut <- year(min(mensuel_global$date))
+mois_debut  <- month(min(mensuel_global$date))
 
 ts_mensuel <- ts(mensuel_global$montees_totales,
-                 start     = c(2016, 1),
-                 frequency = 12)
+                 start = c(annee_debut, mois_debut), frequency = 12)
 
-stl_res <- stl(ts_mensuel,
-               s.window = "periodic",
-               t.window = 13,
-               robust   = TRUE)
+PERIODE_TXT <- paste(format(min(mensuel_global$date), "%m.%Y"),
+                     "au", format(max(mensuel_global$date), "%m.%Y"))
 
-# Extraire les composantes
+# ── 3. DÉCOMPOSITION STL ────────────────────────────────────
+# s.window = "periodic" : saisonnalité constante d'une année sur
+#   l'autre. Hypothèse vérifiée en section 5.
+# t.window = 13 : tendance souple.
+# robust = TRUE : limite l'influence du choc COVID.
+
+T_WINDOW <- 13
+
+stl_res <- stl(ts_mensuel, s.window = "periodic",
+               t.window = T_WINDOW, robust = TRUE)
+
 composantes <- data.frame(
-  date        = mensuel_global$date,
-  observee    = mensuel_global$montees_totales,
-  tendance    = as.numeric(stl_res$time.series[, "trend"]),
+  date         = mensuel_global$date,
+  observee     = mensuel_global$montees_totales,
+  tendance     = as.numeric(stl_res$time.series[, "trend"]),
   saisonnalite = as.numeric(stl_res$time.series[, "seasonal"]),
-  residus     = as.numeric(stl_res$time.series[, "remainder"])
-)
+  residus      = as.numeric(stl_res$time.series[, "remainder"])
+) %>%
+  # Série de travail pour les tests de rupture (voir en-tête)
+  mutate(desaisonnalisee = observee - saisonnalite)
 
-# Statistiques des résidus
-cat("=== STATISTIQUES DES RÉSIDUS STL ===\n\n")
-cat("Moyenne   :", round(mean(composantes$residus) / 1e6, 4), "M\n")
-cat("Écart-type:", round(sd(composantes$residus) / 1e6, 3), "M\n")
-cat("Min       :", round(min(composantes$residus) / 1e6, 3), "M\n")
-cat("Max       :", round(max(composantes$residus) / 1e6, 3), "M\n")
+cat("\n=== RÉSIDUS STL ===\n")
+cat("Moyenne    :", round(mean(composantes$residus) / 1e6, 4), "M\n")
+cat("Écart-type :", round(sd(composantes$residus)   / 1e6, 3), "M\n")
+cat("Min        :", round(min(composantes$residus)  / 1e6, 3), "M\n")
+cat("Max        :", round(max(composantes$residus)  / 1e6, 3), "M\n")
 
-# Quel mois a le résidu le plus négatif ?
-cat("\nPlancher résiduel :\n")
-composantes %>%
-  filter(residus == min(residus)) %>%
-  mutate(mois = format(date, "%B %Y")) %>%
-  dplyr::select(mois, residus) %>%
-  mutate(residus = round(residus / 1e6, 3)) %>%
-  print()
+cat("\nMois du résidu le plus négatif :\n")
+print(as.data.frame(composantes %>%
+  slice_min(residus, n = 1) %>%
+  transmute(mois = format(date, "%B %Y"),
+            residu_M = round(residus / 1e6, 3))))
 
+# ── 4. DÉMONSTRATION DE S-02 ────────────────────────────────
+# On montre, chiffres à l'appui, pourquoi les résidus ne peuvent
+# pas servir à détecter un changement de niveau : autour d'une
+# date d'intérêt, la tendance se déplace et les résidus restent
+# plats, alors que la série désaisonnalisée bouge.
 
-# ── 4. GRAPHIQUE — DÉCOMPOSITION STL ────────────────────────
-# 4 panneaux : observée, tendance, saisonnalité, résidus
-# NOTE VIZ : graphique technique — version finale Python
+fenetre <- composantes %>%
+  filter(date >= D_GRATUITE %m-% months(4),
+         date <= D_GRATUITE %m+% months(4))
 
-# Dates clés pour annotations
-ruptures <- data.frame(
-  date    = as.Date(c("2019-12-01", "2020-03-01", "2025-01-01")),
-  label   = c("Léman Express", "COVID", "Gratuité jeunes"),
-  couleur = c(COL_LEMAN, COL_COVID, COL_GRATUITE)
-)
+cat("\n=== S-02 : POURQUOI PAS LES RÉSIDUS ===\n")
+cat("Fenêtre autour du", format(D_GRATUITE), "(millions de montées)\n")
+print(as.data.frame(fenetre %>%
+  transmute(mois = format(date, "%Y-%m"),
+            observee = round(observee / 1e6, 2),
+            tendance = round(tendance / 1e6, 2),
+            residus  = round(residus  / 1e6, 2),
+            desaisonnalisee = round(desaisonnalisee / 1e6, 2))))
 
-# Restructurer en format long pour facet
-composantes_long <- composantes %>%
-  tidyr::pivot_longer(
-    cols      = c(observee, tendance, saisonnalite, residus),
-    names_to  = "composante",
-    values_to = "valeur"
-  ) %>%
+depl_tendance <- fenetre$tendance[nrow(fenetre)] - fenetre$tendance[1]
+depl_desais   <- fenetre$desaisonnalisee[nrow(fenetre)] - fenetre$desaisonnalisee[1]
+moy_res_avant <- mean(fenetre$residus[fenetre$date <  D_GRATUITE])
+moy_res_apres <- mean(fenetre$residus[fenetre$date >= D_GRATUITE])
+
+cat("\nSur cette fenêtre, déplacement du début à la fin :\n")
+cat("  tendance        :", round(depl_tendance / 1e6, 3), "M\n")
+cat("  desaisonnalisee :", round(depl_desais   / 1e6, 3), "M\n")
+cat("  residus, moyenne avant / après :",
+    round(moy_res_avant / 1e6, 3), "/",
+    round(moy_res_apres / 1e6, 3), "M\n")
+cat("La tendance se déplace, les résidus oscillent autour de zéro",
+    "sans décalage.\nLe changement de niveau est DANS la tendance,",
+    "donc absent des résidus.\n")
+cat("Les tests de rupture du script 07 utilisent 'desaisonnalisee'.\n")
+
+# ── 5. STABILITÉ DE LA SAISONNALITÉ ─────────────────────────
+# s.window = "periodic" impose une saisonnalité identique chaque
+# année. On vérifie cette hypothèse avec une décomposition à
+# saisonnalité flexible, en comparant les profils avant et après
+# la période COVID.
+
+S_WINDOW_FLEX <- 11
+
+stl_flex <- stl(ts_mensuel, s.window = S_WINDOW_FLEX,
+                t.window = T_WINDOW, robust = TRUE)
+
+saison_flex <- data.frame(
+  date   = mensuel_global$date,
+  saison = as.numeric(stl_flex$time.series[, "seasonal"])
+) %>%
   mutate(
-    composante = factor(composante,
-                        levels = c("observee", "tendance",
-                                   "saisonnalite", "residus"),
-                        labels = c("Série observée",
-                                   "Tendance",
-                                   "Saisonnalité",
-                                   "Résidus"))
-  )
+    mois_num = month(date),
+    periode  = case_when(
+      date <  D_COVID                     ~ "Avant 2020",
+      date >= as.Date("2022-01-01")       ~ "Depuis 2022",
+      TRUE                                ~ "COVID (exclu)"
+    )
+  ) %>%
+  filter(periode != "COVID (exclu)")
 
-p_stl <- ggplot(composantes_long,
-                aes(x = date, y = valeur / 1e6)) +
-  geom_line(color = TPG_RED, linewidth = 0.7) +
-  
-  # Ligne zéro pour saisonnalité et résidus
+comparaison_saison <- saison_flex %>%
+  group_by(mois_num, periode) %>%
+  summarise(saison_med = median(saison), .groups = "drop") %>%
+  pivot_wider(names_from = periode, values_from = saison_med) %>%
+  mutate(ecart_M = round((`Depuis 2022` - `Avant 2020`) / 1e6, 3),
+         across(c(`Avant 2020`, `Depuis 2022`), ~ round(. / 1e6, 2)))
+
+cat("\n=== STABILITÉ DE LA SAISONNALITÉ (s.window flexible) ===\n")
+cat("Profil saisonnier avant 2020 contre depuis 2022, en millions\n")
+print(as.data.frame(comparaison_saison))
+
+correl_saison <- cor(comparaison_saison$`Avant 2020`,
+                     comparaison_saison$`Depuis 2022`)
+ecart_max <- max(abs(comparaison_saison$ecart_M))
+cat("\nCorrélation des deux profils :", round(correl_saison, 3), "\n")
+cat("Écart mensuel maximal        :", ecart_max, "M\n")
+cat(ifelse(correl_saison > 0.9,
+           "Profils très proches : s.window = 'periodic' est défendable.\n",
+           "Profils divergents : revoir l'hypothèse de saisonnalité constante.\n"))
+
+# ── 6. FIGURE 1 : DÉCOMPOSITION STL ─────────────────────────
+
+composantes_long <- composantes %>%
+  select(date, observee, tendance, saisonnalite, residus) %>%
+  pivot_longer(cols = -date, names_to = "composante",
+               values_to = "valeur") %>%
+  mutate(composante = factor(
+    composante,
+    levels = c("observee", "tendance", "saisonnalite", "residus"),
+    labels = c("Série observée", "Tendance", "Saisonnalité", "Résidus")))
+
+p_stl <- ggplot(composantes_long, aes(x = date, y = valeur / 1e6)) +
   geom_hline(data = composantes_long %>%
                filter(composante %in% c("Saisonnalité", "Résidus")),
-             aes(yintercept = 0),
-             linetype = "dashed", color = COL_NEUTRE,
-             linewidth = 0.4) +
-  
-  # Ruptures verticales
-  geom_vline(xintercept = as.Date("2019-12-01"),
-             linetype = "dashed", color = COL_LEMAN,
-             linewidth = 0.4) +
-  geom_vline(xintercept = as.Date("2020-03-01"),
-             linetype = "dashed", color = COL_COVID,
-             linewidth = 0.4) +
-  geom_vline(xintercept = as.Date("2025-01-01"),
-             linetype = "dashed", color = COL_GRATUITE,
-             linewidth = 0.4) +
-  
+             aes(yintercept = 0), linetype = "dashed",
+             color = COL_NEUTRE, linewidth = 0.4) +
+  geom_line(color = ROUGE_PRINCIPAL, linewidth = 0.7) +
+  geom_vline(xintercept = D_LEMAN_EXPRESS, linetype = "dashed",
+             color = COL_LEMAN, linewidth = 0.4) +
+  geom_vline(xintercept = D_COVID, linetype = "dashed",
+             color = COL_COVID, linewidth = 0.4) +
+  geom_vline(xintercept = D_GRATUITE, linetype = "dashed",
+             color = COL_GRATUITE, linewidth = 0.4) +
   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
-  scale_y_continuous(labels = label_number(suffix = "M")) +
-  
+  scale_y_continuous(labels = label_number(suffix = " M")) +
   facet_wrap(~ composante, ncol = 1, scales = "free_y") +
-  
   labs(
-    title    = "Décomposition STL — Fréquentation TPG 2016-2026",
-    subtitle = "s.window = periodic | t.window = 13 | robust = TRUE\nLignes : Léman Express (bleu), COVID (rouge), Gratuité jeunes (vert)",
-    x        = NULL,
-    y        = "Millions de montées",
-    caption  = "Source : TPG Open Data"
+    title    = "Décomposition STL de la fréquentation",
+    subtitle = paste0("Série mensuelle ", PERIODE_TXT,
+                      ". s.window = periodic, t.window = ", T_WINDOW,
+                      ", robust.\nLignes verticales : Léman Express, COVID, gratuité jeunes."),
+    x = NULL, y = "Millions de montées",
+    caption = SOURCE_TPG
   ) +
-  theme_tpg() +
-  theme(
-    strip.text       = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
-  )
+  theme_projet() +
+  theme(strip.text = element_text(face = "bold"),
+        panel.grid.minor = element_blank())
 
 print(p_stl)
+ggsave(file.path(DIR_FIG, "06_stl_decomposition.png"),
+       p_stl, width = 12, height = 10, dpi = 150)
+message("Figure 1 enregistrée.")
 
-ggsave("../outputs/06_stl_decomposition.png",
-       plot = p_stl, width = 12, height = 10, dpi = 150)
+# ── 7. FIGURE 2 : PROFIL SAISONNIER MENSUEL ─────────────────
 
-message("Graphique STL sauvegardé.")
-
-
-# ── 5. ANALYSE DE LA SAISONNALITÉ ───────────────────────────
-# Objectif : identifier les mois forts et faibles
-# La saisonnalité STL est identique chaque année (s.window periodic)
-# On extrait le profil saisonnier moyen sur 12 mois
+noms_mois <- c("Jan", "Fév", "Mar", "Avr", "Mai", "Jun",
+               "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc")
 
 saisonnalite_mois <- composantes %>%
   mutate(mois_num = month(date)) %>%
   group_by(mois_num) %>%
-  summarise(
-    saisonnalite_med = median(saisonnalite),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    mois_label = factor(mois_num,
-                        labels = c("Jan", "Fév", "Mar", "Avr",
-                                   "Mai", "Jun", "Jul", "Aoû",
-                                   "Sep", "Oct", "Nov", "Déc")),
-    direction = ifelse(saisonnalite_med >= 0, "Surplus", "Déficit")
-  )
+  summarise(saisonnalite_med = median(saisonnalite), .groups = "drop") %>%
+  mutate(mois_label = factor(mois_num, levels = 1:12, labels = noms_mois),
+         direction  = ifelse(saisonnalite_med >= 0, "Surplus", "Déficit"))
 
-cat("=== PROFIL SAISONNIER MENSUEL ===\n\n")
-saisonnalite_mois %>%
-  dplyr::select(mois_label, saisonnalite_med) %>%
-  mutate(saisonnalite_med = round(saisonnalite_med / 1e3)) %>%
-  print(n = 12)
+cat("\n=== PROFIL SAISONNIER MENSUEL (millions) ===\n")
+print(as.data.frame(saisonnalite_mois %>%
+  transmute(mois = mois_label,
+            ecart_M = round(saisonnalite_med / 1e6, 2))))
 
-# Graphique saisonnalité
+mois_fort   <- saisonnalite_mois %>% slice_max(saisonnalite_med, n = 1)
+mois_faible <- saisonnalite_mois %>% slice_min(saisonnalite_med, n = 1)
+cat("\nMois le plus fort  :", as.character(mois_fort$mois_label),
+    round(mois_fort$saisonnalite_med / 1e6, 2), "M\n")
+cat("Mois le plus faible:", as.character(mois_faible$mois_label),
+    round(mois_faible$saisonnalite_med / 1e6, 2), "M\n")
+cat("Amplitude          :",
+    round((mois_fort$saisonnalite_med - mois_faible$saisonnalite_med) / 1e6, 2),
+    "M\n")
+
 p_saison <- ggplot(saisonnalite_mois,
-                   aes(x = mois_label,
-                       y = saisonnalite_med / 1e3,
+                   aes(x = mois_label, y = saisonnalite_med / 1e6,
                        fill = direction)) +
-  geom_col(alpha = 0.85) +
+  geom_col(alpha = 0.9) +
   geom_hline(yintercept = 0, color = COL_REF, linewidth = 0.5) +
-  scale_fill_manual(
-    values = c("Surplus" = TPG_RED, "Déficit" = "#4A6FA5"),
-    guide  = "none"
-  ) +
-  scale_y_continuous(labels = label_number(suffix = "k")) +
+  scale_fill_manual(values = c("Surplus" = ROUGE_PRINCIPAL,
+                               "Déficit" = COL_NEUTRE), guide = "none") +
+  scale_y_continuous(labels = label_number(suffix = " M")) +
   labs(
-    title    = "Profil saisonnier mensuel — Fréquentation TPG",
-    subtitle = "Composante saisonnière STL — écart vs tendance long terme",
-    x        = NULL,
-    y        = "Milliers de montées (écart vs tendance)",
-    caption  = "Source : TPG Open Data | Rouge = surplus, Bleu = déficit"
+    title    = "Profil saisonnier de la fréquentation",
+    subtitle = paste("Composante saisonnière STL, écart à la tendance.",
+                     PERIODE_TXT),
+    x = NULL, y = "Millions de montées (écart à la tendance)",
+    caption = SOURCE_TPG
   ) +
-  theme_tpg() +
+  theme_projet() +
   theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
 print(p_saison)
+ggsave(file.path(DIR_FIG, "06_saison_mensuelle.png"),
+       p_saison, width = 10, height = 6, dpi = 150)
+message("Figure 2 enregistrée.")
 
+# ── 8. SAUVEGARDE POUR LE SCRIPT 07 ─────────────────────────
 
-# ── 6. BLOC DÉCISION — SAISONNALITÉ ─────────────────────────
+saveRDS(composantes, file.path(DIR_PROC, "stl_composantes.rds"))
+write.csv(comparaison_saison,
+          file.path(DIR_RES, paste0("06_stabilite_saisonnalite_", SNAPSHOT_ID, ".csv")),
+          row.names = FALSE)
+write.csv(saisonnalite_mois %>% select(mois_num, mois_label, saisonnalite_med),
+          file.path(DIR_RES, paste0("06_profil_saisonnier_", SNAPSHOT_ID, ".csv")),
+          row.names = FALSE)
 
-# PROFIL SAISONNIER CONFIRMÉ :
-# Mois forts   : Mar +1.55M, Nov +1.72M, Mai +1.24M, Oct +1.10M
-# Mois faibles : Jul -2.60M, Aoû -2.31M, Fév -0.78M, Avr -0.72M
-#
-# CE QU'ON PEUT AFFIRMER :
-# - La saisonnalité est stable sur 10 ans (s.window periodic justifié)
-# - L'été (jul-aoû) = creux structurel dominant (-2.3 à -2.6M)
-# - Les vacances scolaires (fév, avr) créent des creux secondaires
-# - La saisonnalité n'a PAS changé après COVID — les habitudes
-#   saisonnières des genevois sont restées stables
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - Que la saisonnalité est identique pour tous les types de lignes
-#   → SCOLAIRE aura une saisonnalité très différente de PRINCIPAL
-# - Que s.window = "periodic" est le meilleur paramètre — un s.window
-#   flexible pourrait révéler des changements de saisonnalité post-COVID
-#
-# IMPLICATION OPÉRATIONNELLE (Q-002) :
-# L'offre devrait être modulée selon ce profil — à croiser avec
-# km_prod en Phase 3 pour mesurer l'écart offre/demande
-
-# CORRECTION BLOC DÉCISION :
-# Les horaires VACANCES TPG existent déjà — la modulation de l'offre
-# est déjà en place. Ce profil saisonnier confirme que le système
-# actuel est aligné avec les patterns de demande.
-# Question ouverte (SYN-005) : l'amplitude de la réduction d'offre
-# est-elle proportionnelle à la baisse de demande ?
-# T-002 : demande -28% en VACANCES
-# À comparer avec la baisse de km_prod en VACANCES — Phase 3
-#
-#
-#
-# RÉSIDUS STL → prêts pour T-004b en script 07
-# saveRDS(composantes, "../data/processed/stl_composantes.rds")
-
-saveRDS(composantes, "../data/processed/stl_composantes.rds")
-
-ggsave("../outputs/06_saison_mensuelle.png",
-       plot = p_saison, width = 10, height = 6, dpi = 150)
-
-message("Script 06 terminé. Composantes STL sauvegardées.")
+message("Script 06 terminé. Composantes STL dans ", DIR_PROC, ".")
+message("RAPPEL : le script 07 doit utiliser la colonne 'desaisonnalisee', pas 'residus'.")

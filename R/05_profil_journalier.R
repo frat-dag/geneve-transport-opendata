@@ -1,28 +1,19 @@
 # ============================================================
-# SCRIPT 05 — PROFIL JOURNALIER
-# Projet : TPG Open Data Analysis
+# SCRIPT 05 - PROFILS HORAIRES PAR JOUR DE SEMAINE
 # Auteur : Frat DAG
-# Date   : avril 2026
+# Corrections : R-01, R-02, R-05, R-07, R-08, R-09, T-06, S-10, S-15
 # ------------------------------------------------------------
-# OBJECTIF : Analyser les profils horaires par jour de semaine.
-# Tester si les jours ont des fréquentations différentes (T-001)
-# et si le mercredi a un profil horaire distinct (T-005/T-005b).
-# Ce qu'on sait déjà :
-#   - Même dataset que script 04 (horaire.rds)
-#   - Filtre jours NORMAL uniquement (T-002 prouve VACANCES ≠ NORMAL)
-#   - Médiane sur jours NORMAL = mesure de référence (pas la moyenne)
-#   - Biais des fériés documenté — toujours filtrer NORMAL
+# OBJECTIF :
+#   T-001  : les jours de semaine diffèrent-ils en volume ?
+#   T-005  : le mercredi a-t-il un profil horaire distinct ?
+#   T-005b : matrice complète jours x heures.
+# SOURCE : dataset horaire, jours NORMAL uniquement.
+# NOTE : le test de Dunn est codé ici, sans package externe,
+# pour que le script tourne à l'identique sur toute machine.
 # ============================================================
 
-# ── 1. NETTOYAGE ET PACKAGES ─────────────────────────────────
-
-rm(list = ls())
-gc()
-
-# Définir le répertoire de travail — adapter selon votre environnement
-# setwd("chemin/vers/tpg-opendata-analysis/R")
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
 library(ggplot2)
@@ -30,398 +21,348 @@ library(lubridate)
 library(scales)
 library(tidyr)
 
-# ── 2. CHARGEMENT ET FILTRE ─────────────────────────────────
+# ── 1. CHARGEMENT ET FILTRE ─────────────────────────────────
+# "-" encode les valeurs manquantes de horaire_tranche_stop_theo.
 
-horaire <- readRDS("../data/raw/horaire.rds") %>%
-  filter(donnees_definitives == TRUE) %>%
-  filter(!is.na(horaire_tranche_stop_theo)) %>%
+horaire <- lire("horaire") %>%
+  filter(horaire_tranche_stop_theo != "-") %>%
   mutate(heure = as.integer(horaire_tranche_stop_theo)) %>%
   filter(!is.na(heure))
 
-# Jours NORMAL uniquement pour les analyses intra-semaine
 normal <- horaire %>%
   filter(horaire_type == "NORMAL") %>%
   mutate(
     jour = substr(jour_semaine, 3, nchar(jour_semaine)),
     jour = factor(jour, levels = c("Lundi", "Mardi", "Mercredi",
                                    "Jeudi", "Vendredi"))
-  )
+  ) %>%
+  filter(!is.na(jour))
 
-cat("Jours NORMAL disponibles :", nrow(normal), "observations\n")
-cat("Jours distincts          :", n_distinct(normal$jour), "\n")
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Observations jours NORMAL :", nrow(normal), "\n")
+cat("Dates distinctes          :", n_distinct(normal$date), "\n")
+cat("Période :", format(min(normal$date)), "à",
+    format(max(normal$date)), "\n\n")
 print(table(normal$jour))
 
+PERIODE_TXT <- paste(format(min(normal$date), "%d.%m.%Y"),
+                     "au", format(max(normal$date), "%d.%m.%Y"))
 
-# ── 3. PROFIL HORAIRE PAR JOUR ───────────────────────────────
-# Médiane des montées par heure et par jour
-# On garde toutes les heures ici — le profil complet
+HEURE_MIN <- 5L
+HEURE_MAX <- 23L
+
+# ── 2. PROFIL HORAIRE MÉDIAN PAR JOUR ───────────────────────
 
 profil <- normal %>%
-  filter(heure >= 5 & heure <= 23) %>%
+  filter(heure >= HEURE_MIN, heure <= HEURE_MAX) %>%
   group_by(jour, heure) %>%
-  summarise(
-    mediane_montees = median(nb_de_montees, na.rm = TRUE),
-    n_obs           = n(),
-    .groups         = "drop"
-  )
+  summarise(mediane_montees = median(nb_de_montees, na.rm = TRUE),
+            n_obs = n(), .groups = "drop")
 
-cat("Combinaisons jour×heure :", nrow(profil), "\n")
+pics <- profil %>% group_by(jour) %>% slice_max(mediane_montees, n = 1)
 
-# Pic par jour — quelle heure est la plus chargée ?
 cat("\nPic horaire par jour :\n")
-profil %>%
-  group_by(jour) %>%
-  slice_max(mediane_montees, n = 1) %>%
-  dplyr::select(jour, heure, mediane_montees) %>%
-  mutate(mediane_montees = round(mediane_montees)) %>%
-  print()
+print(as.data.frame(pics %>%
+  select(jour, heure, mediane_montees) %>%
+  mutate(mediane_montees = round(mediane_montees))))
 
-# ── 4. GRAPHIQUE — PROFILS HORAIRES PAR JOUR ────────────────
-# facet_wrap — une courbe par jour, même échelle Y
-# NOTE VIZ : graphique fort pour publication
-
-p_profil <- ggplot(profil,
-                   aes(x = heure, y = mediane_montees / 1e3)) +
-  geom_line(color = TPG_RED, linewidth = 0.9) +
-  geom_area(fill = TPG_RED, alpha = 0.15) +
-  
-  # Marquer le pic de chaque jour
-  geom_point(data = profil %>%
-               group_by(jour) %>%
-               slice_max(mediane_montees, n = 1),
-             color = TPG_RED, size = 2.5) +
-  
-  scale_x_continuous(breaks = seq(5, 23, by = 2),
+p_profil <- ggplot(profil, aes(x = heure, y = mediane_montees / 1e3)) +
+  geom_area(fill = ROUGE_PRINCIPAL, alpha = 0.15) +
+  geom_line(color = ROUGE_PRINCIPAL, linewidth = 0.9) +
+  geom_point(data = pics, color = ROUGE_PRINCIPAL, size = 2.5) +
+  scale_x_continuous(breaks = seq(HEURE_MIN, HEURE_MAX, by = 3),
                      labels = function(x) paste0(x, "h")) +
   scale_y_continuous(labels = label_number(suffix = "k")) +
-  
   facet_wrap(~ jour, ncol = 5) +
-  
   labs(
     title    = "Profil horaire médian par jour de semaine",
-    subtitle = "Jours NORMAL uniquement — médiane des montées par tranche horaire",
-    x        = "Heure",
-    y        = "Milliers de montées",
-    caption  = "Source : TPG Open Data | jan. 2019 → avr. 2026"
+    subtitle = paste0("Jours NORMAL, ", PERIODE_TXT,
+                     ". Le point marque le pic de chaque jour."),
+    x = "Heure", y = "Milliers de montées",
+    caption = SOURCE_TPG
   ) +
-  theme_tpg() +
-  theme(
-    axis.text.x      = element_text(angle = 45, hjust = 1, size = 8),
-    strip.text       = element_text(face = "bold"),
-    panel.grid.major.x = element_blank()
-  )
+  theme_projet() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+        strip.text  = element_text(face = "bold"),
+        panel.grid.major.x = element_blank())
 
 print(p_profil)
+ggsave(file.path(DIR_FIG, "05_profil_journalier.png"),
+       p_profil, width = 14, height = 6, dpi = 150)
+message("Figure 1 enregistrée.")
 
-ggsave("../outputs/05_profil_journalier.png",
-       plot = p_profil, width = 14, height = 6, dpi = 150)
-
-message("Graphique sauvegardé.")
-
-# ── 5. TEST T-001 — DIFFÉRENCES ENTRE JOURS DE SEMAINE ──────
-# Question : les jours de semaine ont-ils des fréquentations
-# significativement différentes ?
-# On agrège d'abord par date — une observation par jour
-# Raison : éviter la pseudoréplication (les heures d'un même
-# jour ne sont pas indépendantes entre elles)
+# ── 3. T-001 : VOLUME PAR JOUR DE SEMAINE ───────────────────
+# Agrégation par date d'abord : les heures d'une même journée ne
+# sont pas indépendantes (pseudoreplication).
+#
+# NOTE S-10 : les journées consécutives restent autocorrélées.
+# Les p-values sont donc optimistes. On publie l'effet (epsilon2,
+# eta2) et les écarts de médianes, pas la p-value brute.
 
 jour_data <- normal %>%
   group_by(date, jour) %>%
-  summarise(
-    montees_jour = sum(nb_de_montees, na.rm = TRUE),
-    .groups      = "drop"
-  )
+  summarise(montees_jour = sum(nb_de_montees, na.rm = TRUE),
+            .groups = "drop")
 
-cat("Observations par jour :\n")
-jour_data %>%
+resume_jours <- jour_data %>%
   group_by(jour) %>%
-  summarise(
-    n       = n(),
-    mediane = round(median(montees_jour)),
-    moyenne = round(mean(montees_jour))
-  ) %>%
-  print()
+  summarise(n = n(),
+            mediane = round(median(montees_jour)),
+            moyenne = round(mean(montees_jour)),
+            .groups = "drop") %>%
+  mutate(ecart_vs_max_pct = round(100 * (mediane / max(mediane) - 1), 1))
 
-# Vérification normalité par jour (Shapiro-Wilk)
-cat("\nTest de normalité par jour :\n")
-for (j in levels(jour_data$jour)) {
-  vals <- jour_data %>% filter(jour == j) %>% pull(montees_jour)
-  sw   <- shapiro.test(vals)
-  cat(sprintf("  %-10s W = %.3f  p = %s\n",
-              j, sw$statistic,
-              format(sw$p.value, scientific = TRUE, digits = 3)))
-}
+cat("\n=== T-001 : VOLUME QUOTIDIEN PAR JOUR ===\n")
+print(as.data.frame(resume_jours))
 
-# ── 6. KRUSKAL-WALLIS + ANOVA — T-001 ───────────────────────
-# Kruskal-Wallis : test de référence (normalité violée)
-# ANOVA : citée en complément (robuste via TCL avec n > 260)
+kw_res  <- kruskal.test(montees_jour ~ jour, data = jour_data)
+aov_sum <- summary(aov(montees_jour ~ jour, data = jour_data))[[1]]
+eta2    <- aov_sum$`Sum Sq`[1] / sum(aov_sum$`Sum Sq`)
 
-kw_res <- kruskal.test(montees_jour ~ jour, data = jour_data)
+cat("\nKruskal-Wallis : H =", round(kw_res$statistic, 2),
+    "| ddl =", kw_res$parameter,
+    "| p =", format(kw_res$p.value, scientific = TRUE, digits = 3), "\n")
+cat("ANOVA          : F =", round(aov_sum$`F value`[1], 3),
+    "| p =", format(aov_sum$`Pr(>F)`[1], scientific = TRUE, digits = 3), "\n")
+cat("eta2 =", round(eta2, 4), "soit", round(100 * eta2, 1),
+    "% de la variance expliquée par le jour |",
+    case_when(eta2 >= 0.14 ~ "Grand",
+              eta2 >= 0.06 ~ "Moyen",
+              eta2 >= 0.01 ~ "Petit",
+              TRUE         ~ "Négligeable"), "\n")
 
-cat("=== KRUSKAL-WALLIS ===\n")
-cat("χ² =", round(kw_res$statistic, 2), "\n")
-cat("ddl =", kw_res$parameter, "\n")
-cat("p   =", format(kw_res$p.value, scientific = TRUE), "\n")
-cat("→", ifelse(kw_res$p.value < 0.05,
-                "Rejet H0 — au moins un jour diffère",
-                "Non-rejet H0"), "\n\n")
+# ── 4. POST-HOC : TEST DE DUNN (code, sans package) ─────────
+# Comparaisons deux à deux après Kruskal-Wallis, avec correction
+# pour les ex aequo et correction de Bonferroni.
+# Vérifié contre pairwise.wilcox.test : mêmes paires retenues.
 
-# ANOVA en complément
-aov_res <- aov(montees_jour ~ jour, data = jour_data)
-aov_sum <- summary(aov_res)[[1]]
-
-cat("=== ANOVA ===\n")
-cat("F   =", round(aov_sum$`F value`[1], 3), "\n")
-cat("p   =", format(aov_sum$`Pr(>F)`[1], scientific = TRUE), "\n\n")
-
-# Taille d'effet η²
-ss_between <- aov_sum$`Sum Sq`[1]
-ss_total   <- sum(aov_sum$`Sum Sq`)
-eta2       <- ss_between / ss_total
-
-cat("Taille d'effet η² =", round(eta2, 4), "\n")
-cat("Soit", round(eta2 * 100, 1),
-    "% de la variance expliquée par le jour\n")
-cat("Magnitude :", case_when(
-  eta2 >= 0.14 ~ "Grand (≥ 0.14)",
-  eta2 >= 0.06 ~ "Moyen (0.06-0.14)",
-  eta2 >= 0.01 ~ "Petit (0.01-0.06)",
-  TRUE         ~ "Négligeable (< 0.01)"
-), "\n")
-
-if (!require(dunn.test)) install.packages("dunn.test")
-
-# ── 7. POST-HOC — QUELS JOURS DIFFÈRENT ? ───────────────────
-# Dunn test (non-paramétrique) — cohérent avec KW
-# Correction Bonferroni — conservatrice mais rigoureuse
-# pour des conclusions fermes
-
-library(dunn.test)
-
-cat("=== DUNN TEST (post-hoc KW) — correction Bonferroni ===\n\n")
-dunn_res <- dunn.test(
-  jour_data$montees_jour,
-  jour_data$jour,
-  method = "bonferroni",
-  altp   = TRUE   # p-values bilatérales
-)
-
-# ── 8. BLOC DÉCISION — T-001 ────────────────────────────────
-
-# RÉSULTATS T-001
-# KW χ² = 58.28, p = 6.65×10⁻¹² → Rejet H0
-# η² = 1.1% → effet petit mais réel
-#
-# POST-HOC DUNN (Bonferroni) :
-# Lundi diffère significativement de TOUS les autres jours
-# Jeudi > Mercredi (p = 0.020) — seule paire significative hors Lundi
-# Aucune autre paire significative
-#
-# CE QU'ON PEUT AFFIRMER :
-# - Lundi est significativement moins fréquenté que tous les autres jours
-# - Jeudi est significativement plus fréquenté que Mercredi
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - Que Jeudi est "le jour le plus chargé" — pas de différence
-#   significative avec Mardi ou Vendredi
-# - Que le vendredi est différent des autres jours de milieu de semaine
-#
-# ANGLE NARRATIF :
-# "Le lundi post-COVID est structurellement plus creux — le télétravail
-# du lundi est une réalité mesurable dans les données TPG"
-# → hypothèse non prouvée causalement mais plausible et intéressante
-#
-# AMÉLIORATION vs ancienne documentation :
-# Dunn non-paramétrique utilisé ici (vs Tukey paramétrique avant)
-# Dunn est plus rigoureux quand la normalité est violée
-
-# On passe maintenant à T-005 — profil mercredi vs autres jours
-
-
-# ── 9. TEST T-005 — PROFIL HORAIRE MERCREDI VS AUTRES ────────
-# Question : le mercredi a-t-il un profil horaire significativement
-# différent des autres jours de semaine ?
-# Approche : KW par heure + corrections multiplicité
-# Pourquoi heure par heure ? On ne teste pas le volume global
-# (T-001 l'a déjà fait) mais la FORME du profil — à quelle heure
-# le mercredi diffère-t-il des autres jours ?
-
-# Filtre minimum 5 observations par groupe par heure
-profil_test <- normal %>%
-  filter(heure >= 5 & heure <= 23) %>%
-  mutate(
-    est_mercredi = ifelse(jour == "Mercredi", "Mercredi", "Autres")
-  ) %>%
-  group_by(heure) %>%
-  filter(
-    sum(est_mercredi == "Mercredi") >= 5 &
-      sum(est_mercredi == "Autres")   >= 5
-  ) %>%
-  ungroup()
-
-# KW par heure
-heures_test <- sort(unique(profil_test$heure))
-resultats_t005 <- data.frame()
-
-for (h in heures_test) {
-  sub <- profil_test %>% filter(heure == h)
-  kw  <- kruskal.test(nb_de_montees ~ est_mercredi, data = sub)
-  
-  # Médiane par groupe
-  med_merc  <- median(sub$nb_de_montees[sub$est_mercredi == "Mercredi"],
-                      na.rm = TRUE)
-  med_autres <- median(sub$nb_de_montees[sub$est_mercredi == "Autres"],
-                       na.rm = TRUE)
-  
-  # Taille d'effet η²
-  n_total <- nrow(sub)
-  eta2_h  <- (kw$statistic - 1) / (n_total - 1)
-  
-  resultats_t005 <- rbind(resultats_t005, data.frame(
-    heure       = h,
-    p_value     = kw$p.value,
-    med_merc    = round(med_merc),
-    med_autres  = round(med_autres),
-    diff_pct    = round((med_merc - med_autres) / med_autres * 100, 1),
-    eta2        = round(eta2_h, 3)
-  ))
-}
-
-# Corrections multiplicité
-resultats_t005$p_bonf <- p.adjust(resultats_t005$p_value,
-                                  method = "bonferroni")
-resultats_t005$p_bh   <- p.adjust(resultats_t005$p_value,
-                                  method = "BH")
-resultats_t005$sig_bf <- resultats_t005$p_bonf < 0.05
-resultats_t005$sig_bh <- resultats_t005$p_bh   < 0.05
-
-cat("=== T-005 — MERCREDI VS AUTRES JOURS PAR HEURE ===\n\n")
-cat("Heures sig. Bonferroni :",
-    sum(resultats_t005$sig_bf), "/", nrow(resultats_t005), "\n")
-cat("Heures sig. BH         :",
-    sum(resultats_t005$sig_bh), "/", nrow(resultats_t005), "\n\n")
-
-cat("Détail heures significatives (Bonferroni) :\n")
-resultats_t005 %>%
-  filter(sig_bf) %>%
-  dplyr::select(heure, diff_pct, eta2, p_bonf) %>%
-  mutate(p_bonf = format(p_bonf, scientific = TRUE, digits = 3)) %>%
-  print()
-
-# ── 10. BLOC DÉCISION — T-005 ───────────────────────────────
-
-# RÉSULTATS T-005 — KW par heure, corrections Bonferroni et BH
-# 8/19 heures sig. Bonferroni | 12/19 heures sig. BH
-#
-# PATTERN STRUCTUREL :
-# 7h-8h  : Mercredi < autres (-3 à -4%)  — petit effet
-# 11h-15h: Mercredi > autres (+8 à +18%) — effet moyen à fort
-#           pic à 14h : diff +17.8%, η² = 0.152
-# 16h    : Mercredi < autres (-11.9%)    — retournement fort
-# 17h    : Mercredi < autres (-3.7%)     — petit effet
-#
-# CE QU'ON PEUT AFFIRMER :
-# - Le mercredi a un profil horaire significativement distinct
-# - La bosse 11h-15h est robuste (Bonferroni)
-# - Le creux à 16h est robuste (η² = 0.117)
-#
-# CE QU'ON NE PEUT PAS AFFIRMER :
-# - La cause — organisation scolaire, télétravail, loisirs ?
-# - La stabilité sur toute la période 2019-2026
-#
-# ANGLE NARRATIF :
-# "Le mercredi genevois a une identité horaire propre — les transports
-# publics absorbent un pic de mi-journée inexistant les autres jours"
-
-# ── 11. SAUVEGARDE FINALE ───────────────────────────────────
-ggsave("../outputs/05_profil_journalier.png",
-       plot = p_profil, width = 14, height = 6, dpi = 150)
-
-message("Script 05 terminé.")
-
-
-# ── T-005b — MATRICE COMPLÈTE JOURS × HEURES ────────────────
-# Tous les jours vs toutes les heures — 5 × 19 = 95 tests
-# Chaque jour comparé aux 4 autres agrégés
-# Corrections : Bonferroni (ferme) + BH (exploratoire)
-
-ordre_jours <- c("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi")
-
-resultats_t005b <- data.frame()
-
-for (j in ordre_jours) {
-  for (h in 5:23) {
-    
-    sub <- normal %>%
-      filter(heure == h) %>%
-      mutate(est_jour = ifelse(jour == j, j, "Autres"))
-    
-    # Minimum 5 observations par groupe
-    if (sum(sub$est_jour == j) < 5 |
-        sum(sub$est_jour == "Autres") < 5) next
-    
-    kw <- kruskal.test(nb_de_montees ~ est_jour, data = sub)
-    
-    med_j      <- median(sub$nb_de_montees[sub$est_jour == j],
-                         na.rm = TRUE)
-    med_autres <- median(sub$nb_de_montees[sub$est_jour == "Autres"],
-                         na.rm = TRUE)
-    n_total    <- nrow(sub)
-    eta2_h     <- (kw$statistic - 1) / (n_total - 1)
-    
-    resultats_t005b <- rbind(resultats_t005b, data.frame(
-      jour      = j,
-      heure     = h,
-      p_value   = kw$p.value,
-      diff_pct  = round((med_j - med_autres) / med_autres * 100, 1),
-      eta2      = round(eta2_h, 3)
+dunn_bonferroni <- function(x, g) {
+  g <- droplevels(factor(g))
+  k <- nlevels(g); N <- length(x)
+  r <- rank(x)
+  tt <- table(x)
+  C  <- sum(tt^3 - tt) / (12 * (N - 1))   # correction ex aequo
+  moy <- tapply(r, g, mean)
+  n_i <- tapply(r, g, length)
+  res <- data.frame()
+  for (i in 1:(k - 1)) for (j in (i + 1):k) {
+    A <- levels(g)[i]; B <- levels(g)[j]
+    se <- sqrt((N * (N + 1) / 12 - C) * (1 / n_i[A] + 1 / n_i[B]))
+    z  <- (moy[A] - moy[B]) / se
+    res <- rbind(res, data.frame(
+      paire = paste(A, "vs", B),
+      Z = round(z, 3),
+      p_brut = 2 * pnorm(abs(z), lower.tail = FALSE)
     ))
   }
+  res$p_bonf <- p.adjust(res$p_brut, method = "bonferroni")
+  res$signif <- res$p_bonf < 0.05
+  rownames(res) <- NULL
+  res
 }
 
-# Corrections multiplicité — 95 tests
-resultats_t005b$p_bonf <- p.adjust(resultats_t005b$p_value,
-                                   method = "bonferroni")
-resultats_t005b$p_bh   <- p.adjust(resultats_t005b$p_value,
-                                   method = "BH")
-resultats_t005b$sig_bf <- resultats_t005b$p_bonf < 0.05
-resultats_t005b$sig_bh <- resultats_t005b$p_bh   < 0.05
+dunn_res <- dunn_bonferroni(jour_data$montees_jour, jour_data$jour)
 
-cat("=== T-005b — MATRICE COMPLÈTE JOURS × HEURES ===\n\n")
-cat("Tests totaux            :", nrow(resultats_t005b), "\n")
-cat("Sig. Bonferroni         :", sum(resultats_t005b$sig_bf),
-    "/", nrow(resultats_t005b),
-    "(", round(mean(resultats_t005b$sig_bf)*100,1), "%)\n")
-cat("Sig. BH                 :", sum(resultats_t005b$sig_bh),
-    "/", nrow(resultats_t005b),
-    "(", round(mean(resultats_t005b$sig_bh)*100,1), "%)\n\n")
+cat("\n--- Post-hoc Dunn (Bonferroni) ---\n")
+print(dunn_res %>%
+  mutate(p_bonf = format(p_bonf, scientific = TRUE, digits = 3)) %>%
+  select(paire, Z, p_bonf, signif))
 
-cat("Résumé par jour (heures sig. Bonferroni) :\n")
-resultats_t005b %>%
-  group_by(jour) %>%
+cat("\nPaires significatives :", sum(dunn_res$signif), "/",
+    nrow(dunn_res), "\n")
+
+enregistrer(
+  test_id = "T-001", script = "05_profil_journalier.R",
+  methode = "Kruskal-Wallis sur montées quotidiennes par jour de semaine (NORMAL)",
+  n = nrow(jour_data), statistique = round(kw_res$statistic, 2),
+  p_value = NA,
+  effet_nom = "eta2", effet = round(eta2, 4),
+  note = paste0("Post-hoc Dunn/Bonferroni : ", sum(dunn_res$signif),
+                "/", nrow(dunn_res), " paires significatives. ",
+                "p-value exclue (autocorrélation, S-10).")
+)
+
+# ── 5. T-005 : MERCREDI VS AUTRES JOURS, HEURE PAR HEURE ────
+# Test global sur toute la période. Chaque heure est testée
+# séparément, avec correction de multiplicité.
+#
+# LIMITE (S-15) : la période 2019-2026 mélange pré-COVID, COVID
+# et post-gratuité. Les deux groupes couvrent la même période,
+# donc pas de biais systématique, mais la variance est gonflée.
+# La section 6 reprend la question sans cette limite.
+
+kw_par_heure <- function(donnees, cible, etiquette_cible) {
+  out <- data.frame()
+  for (h in HEURE_MIN:HEURE_MAX) {
+    sub <- donnees %>%
+      filter(heure == h) %>%
+      mutate(groupe = ifelse(jour == cible, etiquette_cible, "Autres"))
+    n_c <- sum(sub$groupe == etiquette_cible)
+    n_a <- sum(sub$groupe == "Autres")
+    if (n_c < 5 || n_a < 5) next
+    kw <- kruskal.test(nb_de_montees ~ groupe, data = sub)
+    med_c <- median(sub$nb_de_montees[sub$groupe == etiquette_cible], na.rm = TRUE)
+    med_a <- median(sub$nb_de_montees[sub$groupe == "Autres"], na.rm = TRUE)
+    # epsilon2 pour Kruskal-Wallis à 2 groupes : (H - k + 1) / (n - k)
+    eps2 <- (as.numeric(kw$statistic) - 1) / (nrow(sub) - 2)
+    out <- rbind(out, data.frame(
+      jour = cible, heure = h, p_value = kw$p.value,
+      med_cible = round(med_c), med_autres = round(med_a),
+      diff_pct = round(100 * (med_c - med_a) / med_a, 1),
+      epsilon2 = round(eps2, 3)
+    ))
+  }
+  out
+}
+
+t005 <- kw_par_heure(
+  normal %>% filter(heure >= HEURE_MIN, heure <= HEURE_MAX),
+  "Mercredi", "Mercredi"
+)
+t005$p_bonf <- p.adjust(t005$p_value, method = "bonferroni")
+t005$p_bh   <- p.adjust(t005$p_value, method = "BH")
+t005$sig_bf <- t005$p_bonf < 0.05
+t005$sig_bh <- t005$p_bh   < 0.05
+
+cat("\n=== T-005 : MERCREDI VS AUTRES JOURS, PAR HEURE ===\n")
+cat("Heures testées :", nrow(t005), "\n")
+cat("Significatives Bonferroni :", sum(t005$sig_bf), "\n")
+cat("Significatives BH         :", sum(t005$sig_bh), "\n")
+cat("\nHeures significatives (Bonferroni) :\n")
+print(as.data.frame(t005 %>% filter(sig_bf) %>%
+  select(heure, med_cible, med_autres, diff_pct, epsilon2)))
+
+# ── 6. T-005 VERSION INTRA-SEMAINE (plus robuste) ───────────
+# Chaque mercredi est comparé aux autres jours de SA PROPRE
+# semaine, à la même heure. Tout effet de période (COVID,
+# gratuité, saison, météo) disparaît : il est commun aux deux
+# termes de la différence. Test de Wilcoxon apparié sur ces
+# différences intra-semaine.
+
+semaine_data <- normal %>%
+  filter(heure >= HEURE_MIN, heure <= HEURE_MAX) %>%
+  mutate(annee = year(date), sem = indice_semaine) %>%
+  group_by(annee, sem, heure) %>%
+  filter(any(jour == "Mercredi"), sum(jour != "Mercredi") >= 2) %>%
   summarise(
-    sig_bf    = sum(sig_bf),
-    eta2_max  = round(max(eta2), 3),
-    heure_max = heure[which.max(eta2)],
-    .groups   = "drop"
+    merc   = nb_de_montees[jour == "Mercredi"][1],
+    autres = median(nb_de_montees[jour != "Mercredi"], na.rm = TRUE),
+    .groups = "drop"
   ) %>%
-  print()
+  filter(!is.na(merc), !is.na(autres))
 
-# ── BLOC DÉCISION T-005b ────────────────────────────────────
-# 52/95 sig. Bonferroni (54.7%) | 70/95 sig. BH (73.7%)
-# Chaque jour a une identité horaire statistiquement distincte
-#
-# EFFETS FORTS (η² > 0.10, hors artefacts nocturnes) :
-# Vendredi 23h : η²=0.292 — Noctambus vendredi (sous-réseau distinct)
-# Lundi    23h : η²=0.198 — creux soirée persistant
-# Mercredi 14h : η²=0.152 — bosse mi-journée confirmée
-#
-# NUANCE vs ancienne doc (75.7% sig. BH) :
-# On obtient 73.7% — légèrement inférieur car la matrice est
-# 5×19=95 tests ici vs 5×23=115 dans l'ancienne version
-# (on filtre heure >= 5 dans normal, pas les heures 0-4)
-# Résultat cohérent — différence méthodologique documentée
+t005_intra <- data.frame()
+for (h in sort(unique(semaine_data$heure))) {
+  sub <- semaine_data %>% filter(heure == h)
+  if (nrow(sub) < 10) next
+  w <- suppressWarnings(wilcox.test(sub$merc, sub$autres,
+                                    paired = TRUE, conf.int = TRUE))
+  t005_intra <- rbind(t005_intra, data.frame(
+    heure = h, n_semaines = nrow(sub),
+    p_value = w$p.value,
+    diff_HL = round(as.numeric(w$estimate)),
+    diff_pct = round(100 * median(sub$merc - sub$autres) /
+                       median(sub$autres), 1)
+  ))
+}
+t005_intra$p_bonf <- p.adjust(t005_intra$p_value, method = "bonferroni")
+t005_intra$sig_bf <- t005_intra$p_bonf < 0.05
 
-ggsave("../outputs/05_profil_journalier.png",
-       plot = p_profil, width = 14, height = 6, dpi = 150)
-message("T-005b complété — AM-001 résolu.")
+cat("\n=== T-005 INTRA-SEMAINE (mercredi vs sa propre semaine) ===\n")
+cat("Heures testées :", nrow(t005_intra),
+    "| significatives Bonferroni :", sum(t005_intra$sig_bf), "\n")
+print(as.data.frame(t005_intra %>%
+  select(heure, n_semaines, diff_HL, diff_pct, sig_bf)))
+
+cat("\nComparaison des deux approches (heures significatives) :\n")
+cat("  Global      :", paste(t005$heure[t005$sig_bf], collapse = ", "), "\n")
+cat("  Intra-semaine:", paste(t005_intra$heure[t005_intra$sig_bf],
+                              collapse = ", "), "\n")
+
+# ── 7. FIGURE 2 : ÉCART DU MERCREDI PAR HEURE ───────────────
+
+ecart_viz <- t005_intra %>%
+  mutate(sens = ifelse(diff_pct >= 0, "Plus fréquente", "Moins fréquente"))
+
+p_mercredi <- ggplot(ecart_viz, aes(x = heure, y = diff_pct, fill = sens)) +
+  geom_col(alpha = 0.9) +
+  geom_hline(yintercept = 0, color = COL_REF, linewidth = 0.5) +
+  scale_x_continuous(breaks = seq(HEURE_MIN, HEURE_MAX, by = 2),
+                     labels = function(x) paste0(x, "h")) +
+  scale_y_continuous(labels = label_number(suffix = " %")) +
+  scale_fill_manual(values = c("Plus fréquente" = ROUGE_PRINCIPAL,
+                               "Moins fréquente" = COL_NEUTRE),
+                    name = NULL) +
+  labs(
+    title    = "Le mercredi comparé aux autres jours de la même semaine",
+    subtitle = paste0("Écart médian des montées, heure par heure. ",
+                     "Jours NORMAL, ", PERIODE_TXT),
+    x = "Heure", y = "Écart vs autres jours de la semaine",
+    caption = SOURCE_TPG
+  ) +
+  theme_projet() +
+  theme(legend.position = "bottom")
+
+print(p_mercredi)
+ggsave(file.path(DIR_FIG, "05_ecart_mercredi.png"),
+       p_mercredi, width = 11, height = 6, dpi = 150)
+message("Figure 2 enregistrée.")
+
+# ── 8. T-005b : MATRICE COMPLÈTE JOURS x HEURES ─────────────
+# Chaque jour comparé aux quatre autres agrégés, heure par heure.
+# Correction de multiplicité sur l'ensemble de la matrice.
+
+t005b <- bind_rows(lapply(levels(normal$jour), function(j) {
+  kw_par_heure(normal %>% filter(heure >= HEURE_MIN, heure <= HEURE_MAX), j, j)
+}))
+t005b$p_bonf <- p.adjust(t005b$p_value, method = "bonferroni")
+t005b$p_bh   <- p.adjust(t005b$p_value, method = "BH")
+t005b$sig_bf <- t005b$p_bonf < 0.05
+t005b$sig_bh <- t005b$p_bh   < 0.05
+
+cat("\n=== T-005b : MATRICE JOURS x HEURES ===\n")
+cat("Tests          :", nrow(t005b), "\n")
+cat("Sig. Bonferroni:", sum(t005b$sig_bf),
+    "(", round(100 * mean(t005b$sig_bf), 1), "% )\n")
+cat("Sig. BH        :", sum(t005b$sig_bh),
+    "(", round(100 * mean(t005b$sig_bh), 1), "% )\n")
+cat("\nRésumé par jour :\n")
+print(as.data.frame(t005b %>%
+  group_by(jour) %>%
+  summarise(sig_bf = sum(sig_bf),
+            eps2_max = round(max(epsilon2), 3),
+            heure_eps2_max = heure[which.max(epsilon2)],
+            .groups = "drop")))
+
+# ── 9. SAUVEGARDE DES RÉSULTATS ─────────────────────────────
+
+write.csv(resume_jours, file.path(DIR_RES, paste0("05_T001_resume_jours_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(dunn_res,     file.path(DIR_RES, paste0("05_T001_dunn_",         SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(t005,         file.path(DIR_RES, paste0("05_T005_global_",       SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(t005_intra,   file.path(DIR_RES, paste0("05_T005_intrasemaine_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(t005b,        file.path(DIR_RES, paste0("05_T005b_matrice_",     SNAPSHOT_ID, ".csv")), row.names = FALSE)
+
+enregistrer(
+  test_id = "T-005", script = "05_profil_journalier.R",
+  methode = "Wilcoxon apparié intra-semaine, mercredi vs autres jours, par heure",
+  n = nrow(semaine_data),
+  statistique = NA, p_value = NA,
+  effet_nom = "heures significatives (Bonferroni)",
+  effet = sum(t005_intra$sig_bf),
+  note = paste0("Sur ", nrow(t005_intra), " heures testées. ",
+                "Version globale (non appariée) : ", sum(t005$sig_bf),
+                " heures. Détail dans 05_T005_intrasemaine.csv.")
+)
+
+enregistrer(
+  test_id = "T-005b", script = "05_profil_journalier.R",
+  methode = "Kruskal-Wallis par jour et par heure, chaque jour vs les quatre autres",
+  n = nrow(t005b),
+  statistique = NA, p_value = NA,
+  effet_nom = "tests significatifs (Bonferroni)",
+  effet = sum(t005b$sig_bf),
+  note = paste0(sum(t005b$sig_bh), " significatifs en BH. ",
+                "Non appariée : limite de période documentée (S-15).")
+)
+
+message("Script 05 terminé. Figures dans figures/, résultats dans resultats/.")

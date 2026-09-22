@@ -1,205 +1,195 @@
 # ============================================================
-# SCRIPT 02 — FRÉQUENTATION JOURNALIÈRE
-# Projet : TPG Open Data Analysis
+# SCRIPT 02 - FRÉQUENTATION JOURNALIÈRE : CONTRÔLES ET STRUCTURE
 # Auteur : Frat DAG
-# Date   : avril 2026
+# Corrections appliquées : R-01, R-02, R-04, R-05, R-09, T-04 (voir CORRECTIONS.md)
 # ------------------------------------------------------------
-# OBJECTIF : Explorer la fréquentation journalière par arrêt
-# et par ligne. Identifier les arrêts et lignes dominants.
-# Ce qu'on sait déjà (script 00) :
-#   - Période : avr 2023 → avr 2026 (1.75M lignes)
-#   - Filtre donnees_definitives == TRUE obligatoire
-#   - ligne en numeric → convertir en character
-#   - 2 326 NA sur ligne (0.1%) → exclure analyses par ligne
-#   - nb_de_montees = décimaux (correction qualité TPG)
+# OBJECTIF :
+#   A. Contrôler le dataset journalier avant tout usage :
+#      continuité des dates, clé unique, valeurs manquantes,
+#      recoupement avec le dataset mensuel.
+#   B. Décrire la structure du réseau : parts par type de ligne,
+#      dix premiers arrêts, dix premières lignes.
+# RÈGLE : aucun chiffre écrit en dur. Les constats sont lus dans
+# la sortie et dans resultats/, pas dans les commentaires.
 # ============================================================
 
-# ── 1. PACKAGES ─────────────────────────────────────────────
+source(here::here("R", "config.R"))
 
 library(dplyr)
 library(ggplot2)
-library(scales)    # formatage des axes (millions, milliers)
+library(scales)
 
-# ── 2. CHARGEMENT ───────────────────────────────────────────
+# ── A1. CHARGEMENT ET INVENTAIRE DU FILTRE ──────────────────
 
-journalier <- readRDS("../data/raw/journalier.rds")
+brut <- readRDS(file.path(DIR_RAW, "journalier.rds"))
+journalier <- lire("journalier")   # définitives + coupure + ligne en texte
 
-cat("Dimensions brutes :", nrow(journalier), "lignes x",
-    ncol(journalier), "colonnes\n")
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n\n")
+cat("Lignes brutes                :", nrow(brut), "\n")
+cat("  dont non définitives       :", sum(!brut$donnees_definitives), "\n")
+cat("  dont postérieures à coupure:", sum(brut$date > DATE_COUPURE), "\n")
+cat("Lignes retenues              :", nrow(journalier),
+    "(", round(100 * nrow(journalier) / nrow(brut), 1), "% )\n")
+rm(brut)
 
-# ── 3. FILTRE QUALITÉ ────────────────────────────────────────
-# Règle DEC-002 : donnees_definitives == TRUE systématique
-# On documente combien on perd avant de filtrer
+# ── A2. PÉRIODE ET CONTINUITÉ ───────────────────────────────
 
-n_avant <- nrow(journalier)
+d_min <- min(journalier$date)
+d_max <- max(journalier$date)
+jours_attendus  <- seq(d_min, d_max, by = "day")
+jours_manquants <- as.Date(setdiff(jours_attendus, unique(journalier$date)),
+                           origin = "1970-01-01")
 
-journalier <- journalier %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne))  # DEC-001 : ligne en character
+cat("\nPériode          :", format(d_min), "au", format(d_max), "\n")
+cat("Jours attendus   :", length(jours_attendus), "\n")
+cat("Jours présents   :", n_distinct(journalier$date), "\n")
+cat("Jours manquants  :", length(jours_manquants), "\n")
+if (length(jours_manquants) > 0) print(jours_manquants)
 
-n_apres <- nrow(journalier)
+PERIODE_TXT <- paste(format(d_min, "%d.%m.%Y"), "au", format(d_max, "%d.%m.%Y"))
 
-cat("Après filtre qualité :", n_apres, "lignes\n")
-cat("Lignes provisoires exclues :", n_avant - n_apres,
-    "(", round((n_avant - n_apres) / n_avant * 100, 1), "%)\n")
+# ── A3. CLÉ, VALEURS MANQUANTES, VALEURS IMPOSSIBLES ────────
+# Une observation = un jour x une ligne x un point d'arrêt (code long).
+# Un même NOM d'arrêt regroupe plusieurs codes (quais, directions).
 
-# ── 4. VÉRIFICATION PÉRIODE APRÈS FILTRE ────────────────────
-# On vérifie que le filtre n'a pas tronqué une période entière
+cat("\nDoublons sur (date, ligne, arret_code_long) :",
+    sum(duplicated(journalier[, c("date", "ligne", "arret_code_long")])), "\n")
+cat("Noms d'arrêt distincts  :", n_distinct(journalier$arret), "\n")
+cat("Codes d'arrêt distincts :", n_distinct(journalier$arret_code_long), "\n")
+cat("Lignes distinctes       :", n_distinct(journalier$ligne, na.rm = TRUE), "\n")
 
-cat("Période couverte après filtre :\n")
-cat("  Du :", format(min(journalier$date)), "\n")
-cat("  Au :", format(max(journalier$date)), "\n")
+total_montees <- sum(journalier$nb_de_montees, na.rm = TRUE)
+na_ligne      <- is.na(journalier$ligne)
 
-# Combien de dates distinctes ?
-cat("  Dates distinctes :", n_distinct(journalier$date), "\n")
+cat("\nMontées manquantes (NA) :", sum(is.na(journalier$nb_de_montees)), "\n")
+cat("Montées négatives       :", sum(journalier$nb_de_montees < 0, na.rm = TRUE), "\n")
+cat("Observations sans ligne :", sum(na_ligne),
+    "(", round(100 * mean(na_ligne), 2), "% des observations,",
+    round(100 * sum(journalier$nb_de_montees[na_ligne]) / total_montees, 4),
+    "% des montées )\n")
 
-# Combien d'arrêts et de lignes distincts ?
-cat("  Arrêts distincts :", n_distinct(journalier$arret), "\n")
-cat("  Lignes distinctes :", n_distinct(journalier$ligne), "\n")
-cat("  Types de ligne :", n_distinct(journalier$ligne_type_act), "\n")
-print(sort(table(journalier$ligne_type_act), decreasing = TRUE))
+# ── A4. RECOUPEMENT AVEC LE DATASET MENSUEL ─────────────────
+# Si le journalier est complet, ses sommes mensuelles doivent
+# retrouver celles du dataset mensuel, publié séparément.
+# C'est le contrôle qui aurait détecté un export tronqué.
 
-# ── 5. FRÉQUENTATION TOTALE PAR TYPE DE LIGNE ───────────────
-# Objectif : comprendre la structure du réseau avant d'aller
-# au niveau arrêt ou ligne individuelle
-# On agrège les montées totales par type — pas par date
+mensuel <- readRDS(file.path(DIR_RAW, "mensuel.rds")) %>%
+  mutate(ligne = as.character(ligne))
+
+recoup_mois <- journalier %>%
+  mutate(mois = format(date, "%Y-%m")) %>%
+  group_by(mois) %>%
+  summarise(montees_journalier = sum(nb_de_montees), .groups = "drop") %>%
+  inner_join(mensuel %>% group_by(mois) %>%
+               summarise(montees_mensuel = sum(nb_de_montees, na.rm = TRUE),
+                         .groups = "drop"),
+             by = "mois") %>%
+  mutate(ecart_pct = round(100 * (montees_journalier - montees_mensuel) /
+                             montees_mensuel, 3))
+
+cat("\n=== RECOUPEMENT JOURNALIER / MENSUEL, PAR MOIS ===\n")
+cat("Mois comparés :", nrow(recoup_mois), "\n")
+cat("Ecart relatif (%) - min, mediane, max :",
+    min(recoup_mois$ecart_pct), median(recoup_mois$ecart_pct),
+    max(recoup_mois$ecart_pct), "\n")
+cat("Mois avec un écart supérieur à 0,01 % :\n")
+print(as.data.frame(recoup_mois %>% filter(abs(ecart_pct) > 0.01)))
+
+mois_communs <- recoup_mois$mois
+recoup_ligne <- journalier %>%
+  filter(!is.na(ligne)) %>%
+  group_by(ligne) %>%
+  summarise(montees_journalier = sum(nb_de_montees), .groups = "drop") %>%
+  full_join(mensuel %>% filter(mois %in% mois_communs, !is.na(ligne)) %>%
+              group_by(ligne) %>%
+              summarise(montees_mensuel = sum(nb_de_montees, na.rm = TRUE),
+                        .groups = "drop"),
+            by = "ligne") %>%
+  mutate(ecart_pct = round(100 * (montees_journalier - montees_mensuel) /
+                             montees_mensuel, 2))
+
+cat("\nLignes présentes dans un seul des deux datasets :",
+    sum(is.na(recoup_ligne$montees_journalier) | is.na(recoup_ligne$montees_mensuel)), "\n")
+cat("Lignes avec un écart supérieur à 1 % sur la période :\n")
+print(as.data.frame(recoup_ligne %>% filter(abs(ecart_pct) > 1) %>%
+                      arrange(desc(abs(ecart_pct)))))
+
+write.csv(recoup_mois,  file.path(DIR_RES, paste0("recoupement_mois_",  SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(recoup_ligne, file.path(DIR_RES, paste0("recoupement_ligne_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+rm(mensuel)
+
+# ── B1. STRUCTURE PAR TYPE DE LIGNE ─────────────────────────
 
 freq_par_type <- journalier %>%
   group_by(ligne_type_act) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    n_lignes        = n_distinct(ligne),
-    n_arrets        = n_distinct(arret)
-  ) %>%
-  mutate(
-    pct_montees = round(montees_totales / sum(montees_totales) * 100, 1),
-    montees_par_ligne = round(montees_totales / n_lignes)
-  ) %>%
-  arrange(desc(montees_totales))
+  summarise(montees  = sum(nb_de_montees),
+            n_lignes = n_distinct(ligne, na.rm = TRUE),
+            n_arrets = n_distinct(arret),
+            .groups  = "drop") %>%
+  mutate(pct_montees = round(100 * montees / sum(montees), 2)) %>%
+  arrange(desc(montees))
 
-cat("=== FRÉQUENTATION PAR TYPE DE LIGNE ===\n\n")
-print(freq_par_type)
+cat("\n=== FREQUENTATION PAR TYPE DE LIGNE -", PERIODE_TXT, "===\n")
+print(as.data.frame(freq_par_type))
 
-# ── 6. TOP 10 ARRÊTS — MONTÉES TOTALES ──────────────────────
-# On agrège sur toute la période disponible
-# Filtre : exclure les NA sur arret (sécurité)
+# ── B2. DIX PREMIERS ARRÊTS ET DIX PREMIÈRES LIGNES ─────────
+# Arrêt = nom d'arrêt (tous quais confondus). Les montées incluent
+# les correspondances : un pôle d'échange est mécaniquement haut.
 
 top_arrets <- journalier %>%
-  filter(!is.na(arret)) %>%
   group_by(arret) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    n_lignes        = n_distinct(ligne)
-  ) %>%
-  arrange(desc(montees_totales)) %>%
+  summarise(montees  = sum(nb_de_montees),
+            n_lignes = n_distinct(ligne, na.rm = TRUE),
+            n_codes  = n_distinct(arret_code_long),
+            .groups  = "drop") %>%
+  arrange(desc(montees)) %>%
   slice_head(n = 10) %>%
-  mutate(
-    rang            = row_number(),
-    pct_du_total    = round(montees_totales / sum(journalier$nb_de_montees,
-                                                  na.rm = TRUE) * 100, 1)
-  )
+  mutate(pct_du_total = round(100 * montees / total_montees, 1))
 
-cat("=== TOP 10 ARRÊTS ===\n\n")
-print(top_arrets)
-
-# TOP 10 LIGNES
 top_lignes <- journalier %>%
   filter(!is.na(ligne)) %>%
   group_by(ligne, ligne_type_act) %>%
-  summarise(
-    montees_totales = sum(nb_de_montees, na.rm = TRUE),
-    n_arrets        = n_distinct(arret),
-    .groups         = "drop"
-  ) %>%
-  arrange(desc(montees_totales)) %>%
+  summarise(montees = sum(nb_de_montees), n_arrets = n_distinct(arret),
+            .groups = "drop") %>%
+  arrange(desc(montees)) %>%
   slice_head(n = 10) %>%
-  mutate(
-    rang         = row_number(),
-    pct_du_total = round(montees_totales / sum(journalier$nb_de_montees,
-                                               na.rm = TRUE) * 100, 1)
-  )
+  mutate(pct_du_total = round(100 * montees / total_montees, 1))
 
-cat("\n=== TOP 10 LIGNES ===\n\n")
-print(top_lignes)
+cat("\n=== DIX PREMIERS ARRÊTS ===\n"); print(as.data.frame(top_arrets))
+cat("Part cumulée :", sum(top_arrets$pct_du_total), "%\n")
+cat("\n=== DIX PREMIÈRES LIGNES ===\n"); print(as.data.frame(top_lignes))
+cat("Part cumulée :", sum(top_lignes$pct_du_total), "%\n")
 
-# ── 7. BLOC DÉCISION — SCRIPT 02 ────────────────────────────
+write.csv(freq_par_type, file.path(DIR_RES, paste0("02_parts_par_type_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(top_arrets,    file.path(DIR_RES, paste0("02_top10_arrets_",   SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(top_lignes,    file.path(DIR_RES, paste0("02_top10_lignes_",   SNAPSHOT_ID, ".csv")), row.names = FALSE)
 
-# DÉCISION 1 — Structure du réseau : concentration massive sur PRINCIPAL
-# 23 lignes PRINCIPAL = 85% des montées
-# 56 lignes SECONDAIRE = 9.8% des montées
-# Le réseau est structurellement asymétrique — à documenter dans toute
-# communication publique sur l'efficacité des lignes
+# ── B3. FIGURES ─────────────────────────────────────────────
 
-# DÉCISION 2 — NOCTAMBUS REGIONAL = système en extinction
-# 0.0% des montées sur notre période (avr 2023 → fév 2026)
-# Explication : absorbé dans les lignes diurnes depuis déc 2023 (OBS-021)
-# Ne pas interpréter comme une désaffection du service nocturne
-# Les montées nocturnes sont désormais comptabilisées en PRINCIPAL/SECONDAIRE
+barres_top10 <- function(df, var, titre, note = NULL) {
+  df$etiquette <- df[[var]]
+  ggplot(df, aes(x = reorder(etiquette, montees), y = montees / 1e6)) +
+    geom_col(fill = "#B23A48", alpha = 0.85) +
+    geom_text(aes(label = sprintf("%.1f %%", pct_du_total)),
+              hjust = -0.1, size = 3.5, color = "grey30") +
+    coord_flip() +
+    scale_y_continuous(labels = label_number(suffix = " M"),
+                       expand = expansion(mult = c(0, 0.12))) +
+    labs(title = titre,
+         subtitle = paste0("Montées cumulées du ", PERIODE_TXT, ", données définitives"),
+         x = NULL, y = "Millions de montées",
+         caption = paste(c(SOURCE_TPG, "% = part des montées du réseau", note),
+                         collapse = "\n")) +
+    theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.major.y = element_blank())
+}
 
-# DÉCISION 3 — Top 10 arrêts = 29.1% du trafic total
-# Top 10 lignes = 61% du trafic total
-# Ces chiffres posent la question de la concentration (T-007 — Gini)
-# À ne pas publier sans la courbe de Lorenz complète
+p_arrets <- barres_top10(top_arrets, "arret", "Les dix arrêts les plus fréquentés",
+                         "Montées, correspondances comprises ; tous quais d'un même nom regroupés")
+p_lignes <- barres_top10(top_lignes, "ligne", "Les dix lignes les plus fréquentées")
 
-# DÉCISION 4 — Cornavin (31 lignes), Bel-Air (29), Rive (28)
-# Ces arrêts sont des nœuds de correspondance, pas seulement des arrêts chargés
-# Leur fréquentation reflète les transferts entre lignes autant que les montées nettes
-# Limite : nb_de_montees ne distingue pas "montée directe" vs "montée après correspondance"
+ggsave(file.path(DIR_FIG, "02_top10_arrets.png"), p_arrets, width = 10, height = 6, dpi = 150)
+ggsave(file.path(DIR_FIG, "02_top10_lignes.png"), p_lignes, width = 10, height = 6, dpi = 150)
 
-# ── 8. VISUALISATION — BARPLOT TOP 10 ARRÊTS ────────────────
-# NOTE VIZ : ce graphique mérite une version finale en Python/Power BI
-
-p_arrets <- ggplot(top_arrets,
-                   aes(x = reorder(arret, montees_totales),
-                       y = montees_totales / 1e6)) +
-  geom_col(fill = "#E30613", alpha = 0.85) +
-  geom_text(aes(label = paste0(pct_du_total, "%")),
-            hjust = -0.1, size = 3.5, color = "grey30") +
-  coord_flip() +
-  scale_y_continuous(
-    labels = label_number(suffix = "M"),
-    limits = c(0, 32)
-  ) +
-  labs(
-    title    = "Top 10 arrêts TPG par fréquentation",
-    subtitle = "Montées totales — avr 2023 à fév 2026 (données définitives)",
-    x        = NULL,
-    y        = "Millions de montées",
-    caption  = "Source : TPG Open Data | % = part du trafic total réseau"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title    = element_text(face = "bold"),
-    panel.grid.major.y = element_blank()
-  )
-
-print(p_arrets)
-
-p_lignes <- ggplot(top_lignes,
-                   aes(x = reorder(ligne, montees_totales),
-                       y = montees_totales / 1e6)) +
-  geom_col(fill = "#E30613", alpha = 0.85) +
-  geom_text(aes(label = paste0(pct_du_total, "%")),
-            hjust = -0.1, size = 3.5, color = "grey30") +
-  coord_flip() +
-  scale_y_continuous(
-    labels = label_number(suffix = "M"),
-    limits = c(0, 46)
-  ) +
-  labs(
-    title    = "Top 10 lignes TPG par fréquentation",
-    subtitle = "Montées totales — avr 2023 à fév 2026 (données définitives)",
-    x        = "Ligne",
-    y        = "Millions de montées",
-    caption  = "Source : TPG Open Data | % = part du trafic total réseau\nToutes les lignes sont de type PRINCIPAL"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title         = element_text(face = "bold"),
-    panel.grid.major.y = element_blank()
-  )
-
-print(p_lignes)
-
-ggsave("../outputs/02_top10_lignes.png",
-       plot = p_lignes, width = 10, height = 6, dpi = 150)
+message("Script 02 terminé. Résultats dans resultats/, figures dans figures/.")

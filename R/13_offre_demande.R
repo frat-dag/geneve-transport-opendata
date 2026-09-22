@@ -1,693 +1,491 @@
-# ── SCRIPT 13 — OFFRE VS DEMANDE : KM PRODUITS × FRÉQUENTATION ──────────────
-# Projet : TPG Open Data Analysis
+# ============================================================
+# SCRIPT 13 - OFFRE ET DEMANDE
 # Auteur : Frat DAG
-# Date   : mai 2026
-# Données: km_prod.rds, journalier.rds, mensuel.rds
-# ─────────────────────────────────────────────────────────────────────────────
+# Corrections : R-01, R-02, R-05, R-07, R-08, R-09, T-04, T-06,
+#               S-10, S-12, S-19, S-31, S-35
+# ------------------------------------------------------------
+# TESTS :
+#   T-013a : rapport montées / km, jours NORMAL contre VACANCES
+#   T-013b : rapport montées / km selon le mode (tram, trolleybus,
+#            autobus)
+#   T-013c : évolution du rapport dans le temps (journalier)
+#   T-013d : montées / km annuelles depuis 2016 (mensuel), avec
+#            décomposition et périmètre constant (S-35)
 #
-# APPROCHE : inductive — exploration visuelle avant hypothèse.
-# Synergies traitées : SYN-005, SYN-006, SYN-010
+# S-12 : la version d'avril qualifiait les cinq lignes de tram de
+# lignes en "site propre intégral" et concluait que l'efficience
+# du site propre était formellement établie. Ces données ne
+# contiennent aucune information sur l'infrastructure, et aucune
+# source publique consultée ne permet d'affirmer que les trams
+# genevois circulent intégralement en site propre. L'affirmation
+# et la conclusion qui en découle sont retirées. Le script compare
+# des modes de transport, pas des types d'infrastructure.
 #
-# EXCLUSIONS (cohérentes script 10 — DEC-015) :
-#   Lignes CX        : ratio artificiel, courses courtes dédiées
-#   Noctambus        : service en extinction, données partielles
-#   GLCT             : biais de périmètre post-appel d'offres 2023
-#
-# TESTS FORMELS :
-#   T-013a — MW bilatéral : ratio montées/km NORMAL vs VACANCES (SYN-005)
-#   T-013b — MW bilatéral : ratio montées/km TRAM vs BUS (SYN-010)
-#   T-013c — Spearman     : tendance temporelle du ratio réseau (SYN-006)
-# ─────────────────────────────────────────────────────────────────────────────
+# S-19 : le rapport montées / km ignore la capacité des véhicules.
+# Une rame de tram transporte plusieurs fois ce que transporte un
+# autobus. Un rapport plus élevé par kilomètre est donc attendu
+# pour le tram, sans rien dire du taux de remplissage.
+# ============================================================
 
-# =============================================================================
-# 1. SETUP
-# =============================================================================
-
-rm(list = ls())
-gc()
-
-source("00_palette.R")
+source(here::here("R", "config.R"))
+source(here::here("R", "00_palette.R"))
 
 library(dplyr)
 library(ggplot2)
-library(lubridate)
 library(scales)
-library(tidyr)
-library(here)
-library(forecast)
+library(lubridate)
 
-# =============================================================================
-# 2. CHARGEMENT
-# =============================================================================
+set.seed(SEED)   # position des points dans la figure des modes
 
-journalier <- readRDS(here::here("data/raw/journalier.rds")) %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne),
-         date  = as.Date(date))
+# ── 1. CHARGEMENT ───────────────────────────────────────────
 
-km_prod <- readRDS(here::here("data/raw/km_prod.rds")) %>%
-  filter(donnees_definitives == TRUE) %>%
-  mutate(ligne = as.character(ligne),
-         date  = as.Date(date))
+journalier <- lire("journalier")
+km_prod    <- lire("km_prod") %>% mutate(ligne = as.character(ligne))
 
-mensuel <- readRDS(here::here("data/raw/mensuel.rds")) %>%
-  filter(donnees_definitives == TRUE, !is.na(ligne)) %>%
-  mutate(ligne = as.character(ligne),
-         date  = ym(mois))
+cat("Snapshot :", SNAPSHOT_ID, "| coupure :", format(DATE_COUPURE), "\n")
+cat("Journalier :", nrow(journalier), "| Km produits :", nrow(km_prod), "\n")
 
-cat("=== CHARGEMENT ===\n")
-cat("journalier :", nrow(journalier), "lignes |",
-    format(min(journalier$date)), "->", format(max(journalier$date)), "\n")
-cat("km_prod    :", nrow(km_prod), "lignes |",
-    format(min(km_prod$date)), "->", format(max(km_prod$date)), "\n")
-cat("mensuel    :", nrow(mensuel), "lignes |",
-    format(min(mensuel$date)), "->", format(max(mensuel$date)), "\n\n")
-
-# Identifier la colonne km dans km_prod (km_prod ou km_produits selon version API)
-col_km <- if ("km_produits" %in% names(km_prod)) "km_produits" else "km_prod"
-cat("Colonne km identifiee :", col_km, "\n\n")
-km_prod <- km_prod %>% rename(km_col = !!sym(col_km))
-
-# =============================================================================
-# 3. EXPLORATION PRÉLIMINAIRE
-# =============================================================================
-# Regarder AVANT de décider. Règle inductive.
-
-cat("--- Types de lignes km_prod ---\n")
-km_prod %>% count(ligne_type_act, sort = TRUE) %>% print()
-
-cat("\n--- Lignes communes journalier x km_prod ---\n")
-lignes_communes <- intersect(unique(journalier$ligne), unique(km_prod$ligne))
-cat("Lignes communes :", length(lignes_communes), "\n")
-
-lignes_km_seul <- setdiff(unique(km_prod$ligne), unique(journalier$ligne))
-cat("Uniquement km_prod (historiques pre-2023) :", length(lignes_km_seul), "\n\n")
-
-# =============================================================================
-# 4. EXCLUSIONS — COHÉRENTES AVEC SCRIPT 10
-# =============================================================================
-
-lignes_cx    <- c("C1","C3","C4","C5","C6","C7","C8","C9")
-lignes_nocta <- c("NC","ND","NE","NJ","NK","NM","NP","NS","NT","NV","NO",
-                  "NB1","NB2","NB3","NB4","NB5","NB6")
-lignes_glct  <- km_prod %>%
-  filter(ligne_type_act == "GLCT") %>%
-  distinct(ligne) %>%
-  pull(ligne)
-
-exclus <- c(lignes_cx, lignes_nocta, lignes_glct)
-
-cat("=== EXCLUSIONS ===\n")
-cat("CX        :", length(lignes_cx), "lignes\n")
-cat("Noctambus :", length(lignes_nocta), "lignes\n")
-cat("GLCT      :", length(lignes_glct), "lignes —",
-    paste(lignes_glct, collapse = ", "), "\n")
-cat("Total exclus :", length(exclus), "\n\n")
-
-# =============================================================================
-# 5. SYN-005 — RIGIDITÉ DE L'OFFRE : L'OFFRE SUIT-ELLE LA DEMANDE ?
-# =============================================================================
-# T-002 a prouvé que les montees baissent de -28.2% en VACANCES.
-# Question inductive : l'offre (km produits) baisse-t-elle dans les
-# memes proportions ? Si l'ecart est grand -> offre structurellement rigide.
+# ── 2. MODE DE CHAQUE LIGNE, DÉDUIT DES DONNÉES ─────────────
+# Le dataset collisions porte une catégorie de véhicule par ligne
+# (ligne_categorie_hist). On s'en sert pour identifier les lignes de
+# tram et de trolleybus plutôt que de recopier une liste de mémoire.
 #
-# H0 : ratio montees/km identique entre NORMAL et VACANCES
-# H1 : ratio different (bilateral — direction prouvee par IC)
-# Test : Mann-Whitney bilateral (non-parametrique, confirme par Shapiro)
-# Agregation : un ratio par jour reseau -> evite la pseudoreplication
+# S-31 : la version précédente ne gardait que les lignes dont la
+# catégorie contenait TRAMWAY, TROLLEYBUS ou AUTOBUS. Les lignes
+# classées GLCT, SCOLAIRE, AUTOBUS REGIONAL ou NOCTAMBUS, et celles
+# sans aucune collision, n'avaient pas de mode et sortaient du test
+# (31 lignes, 5 % des montées). Ce sont toutes des lignes d'autobus.
+# Règle : tram ou trolleybus si la catégorie majoritaire de la ligne
+# le dit, autobus pour toutes les autres lignes. Le contrôle ci-dessous
+# vérifie que tram et trolleybus sont des catégories sans ambiguïté.
 
-# --- 5.1 Agrégation journalière ---
+cat_collisions <- lire("collisions") %>%
+  filter(!is.na(ligne), !is.na(ligne_categorie_hist)) %>%
+  count(ligne, ligne_categorie_hist)
 
-# Montees agregees par date x ligne x horaire_type (somme sur arrets)
-montees_jour_ligne <- journalier %>%
-  filter(!ligne %in% exclus,
-         ligne_type_act %in% c("PRINCIPAL", "SECONDAIRE")) %>%
-  group_by(date, ligne, ligne_type_act, horaire_type) %>%
+controle_modes <- cat_collisions %>%
+  group_by(ligne) %>%
+  filter(any(ligne_categorie_hist %in% c("TRAMWAY", "TROLLEYBUS"))) %>%
+  summarise(categories = n_distinct(ligne_categorie_hist), .groups = "drop")
+cat("\n=== MODES IDENTIFIÉS DEPUIS LES DONNÉES ===\n")
+cat("Lignes ayant une collision tram ou trolleybus :", nrow(controle_modes),
+    "| dont avec plusieurs catégories :", sum(controle_modes$categories > 1), "\n")
+
+categories <- cat_collisions %>%
+  group_by(ligne) %>%
+  slice_max(n, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(mode = case_when(
+    ligne_categorie_hist == "TRAMWAY"    ~ "Tram",
+    ligne_categorie_hist == "TROLLEYBUS" ~ "Trolleybus",
+    TRUE                                 ~ "Autobus")) %>%
+  select(ligne, mode)
+
+mode_de <- function(lignes) {
+  m <- categories$mode[match(lignes, categories$ligne)]
+  ifelse(is.na(m), "Autobus", m)
+}
+
+lignes_actives <- sort(unique(journalier$ligne[!is.na(journalier$ligne)]))
+modes_actifs   <- mode_de(lignes_actives)
+for (m in c("Tram", "Trolleybus", "Autobus")) {
+  lg <- lignes_actives[modes_actifs == m]
+  cat(m, ":", length(lg), "lignes ->", paste(head(lg, 15), collapse = ", "),
+      ifelse(length(lg) > 15, "...", ""), "\n")
+}
+cat("Lignes du journalier absentes du dataset collisions, classées autobus :",
+    sum(!lignes_actives %in% categories$ligne), "\n")
+
+# ── 3. JEU DE DONNEES JOURNALIER : OFFRE ET DEMANDE ─────────
+
+offre <- km_prod %>%
+  group_by(date, horaire_type) %>%
+  summarise(km = sum(km_prod, na.rm = TRUE), .groups = "drop")
+
+demande <- journalier %>%
+  group_by(date, horaire_type) %>%
   summarise(montees = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
 
-# km produits agreges par date x ligne
-km_jour_ligne <- km_prod %>%
-  filter(!ligne %in% exclus,
-         ligne_type_act %in% c("PRINCIPAL", "SECONDAIRE")) %>%
-  group_by(date, ligne, ligne_type_act) %>%
-  summarise(km = sum(km_col, na.rm = TRUE), .groups = "drop")
+reseau_jour <- inner_join(offre, demande, by = c("date", "horaire_type")) %>%
+  filter(km > 0) %>%
+  mutate(ratio = montees / km)
 
-# Jointure sur date x ligne — horaire_type herite du cote journalier
-offre_demande <- montees_jour_ligne %>%
-  inner_join(km_jour_ligne, by = c("date", "ligne", "ligne_type_act")) %>%
-  filter(km > 0)
-
-cat("=== DATASET OFFRE x DEMANDE ===\n")
-cat("Observations (ligne x jour) :", nrow(offre_demande), "\n")
-cat("Lignes distinctes           :", n_distinct(offre_demande$ligne), "\n")
-cat("Periode :", format(min(offre_demande$date)), "->",
-    format(max(offre_demande$date)), "\n\n")
-
-# Un ratio par jour (reseau entier) -> evite pseudoreplication
-reseau_jour <- offre_demande %>%
-  group_by(date, horaire_type) %>%
-  summarise(
-    montees_tot = sum(montees),
-    km_tot      = sum(km),
-    ratio       = sum(montees) / sum(km),
-    .groups     = "drop"
-  ) %>%
-  filter(horaire_type %in% c("NORMAL", "VACANCES"))
-
-# --- 5.2 Exploration : amplitude comparée ---
-
-cat("--- Statistiques par periode (reseau, par jour) ---\n")
-reseau_jour %>%
+cat("\n=== OFFRE ET DEMANDE PAR JOUR ===\n")
+cat("Jours :", nrow(reseau_jour), "de", format(min(reseau_jour$date)),
+    "à", format(max(reseau_jour$date)), "\n")
+print(as.data.frame(reseau_jour %>%
   group_by(horaire_type) %>%
-  summarise(
-    n           = n(),
-    med_montees = round(median(montees_tot)),
-    med_km      = round(median(km_tot)),
-    med_ratio   = round(median(ratio), 4),
-    .groups     = "drop"
-  ) %>%
-  print()
+  summarise(n = n(), km_moy = round(mean(km)),
+            montees_moy = round(mean(montees)),
+            ratio_median = round(median(ratio), 2), .groups = "drop")))
 
-med_norm_mont <- median(reseau_jour$montees_tot[reseau_jour$horaire_type == "NORMAL"])
-med_norm_km   <- median(reseau_jour$km_tot[reseau_jour$horaire_type == "NORMAL"])
-med_vac_mont  <- median(reseau_jour$montees_tot[reseau_jour$horaire_type == "VACANCES"])
-med_vac_km    <- median(reseau_jour$km_tot[reseau_jour$horaire_type == "VACANCES"])
+# ── 4. T-013a : JOURS NORMAL CONTRE VACANCES ────────────────
+# Question : en vacances, la fréquentation baisse-t-elle plus vite
+# que l'offre ? Le rapport montées / km répond directement.
 
-baisse_mont_pct <- round((med_vac_mont / med_norm_mont - 1) * 100, 1)
-baisse_km_pct   <- round((med_vac_km   / med_norm_km   - 1) * 100, 1)
-ecart_pp        <- round(baisse_mont_pct - baisse_km_pct, 1)
+t013a_data <- reseau_jour %>% filter(horaire_type %in% c("NORMAL", "VACANCES"))
 
-cat("\n--- AMPLITUDE COMPAREE ---\n")
-cat("Baisse montees VACANCES vs NORMAL :", baisse_mont_pct, "%\n")
-cat("Baisse km_prod VACANCES vs NORMAL :", baisse_km_pct, "%\n")
-cat("Ecart                             :", ecart_pp, "pp\n")
-if (abs(ecart_pp) > 5) {
-  cat("-> L'offre et la demande ne bougent PAS dans les memes proportions\n")
-  cat("   L'offre est structurellement plus rigide que la demande\n")
-} else {
-  cat("-> L'offre et la demande bougent dans des proportions similaires\n")
-}
+mw_a <- wilcox.test(ratio ~ horaire_type, data = t013a_data,
+                    alternative = "two.sided", conf.int = TRUE)
 
-# --- 5.3 Test de normalité ---
+med_normal   <- median(t013a_data$ratio[t013a_data$horaire_type == "NORMAL"])
+med_vacances <- median(t013a_data$ratio[t013a_data$horaire_type == "VACANCES"])
+r_a <- round(abs(qnorm(mw_a$p.value / 2)) / sqrt(nrow(t013a_data)), 3)
 
-cat("\n--- Normalite du ratio journalier (Shapiro-Wilk, echantillon <= 5000) ---\n")
-for (grp in c("NORMAL", "VACANCES")) {
-  vals <- reseau_jour$ratio[reseau_jour$horaire_type == grp]
-  s    <- if (length(vals) > 5000) sample(vals, 5000) else vals
-  sw   <- shapiro.test(s)
-  cat(sprintf("  %-10s n=%-4d W=%.3f p=%.4f %s\n",
-              grp, length(vals), sw$statistic, sw$p.value,
-              ifelse(sw$p.value < 0.05, "-> NON normale", "-> normale")))
-}
+cat("\n=== T-013a : RAPPORT MONTÉES / KM, NORMAL CONTRE VACANCES ===\n")
+cat("Médiane NORMAL   :", round(med_normal, 2), "montées par km\n")
+cat("Médiane VACANCES :", round(med_vacances, 2), "montées par km\n")
+cat("Écart relatif    :", round(100 * (med_vacances / med_normal - 1), 1), "%\n")
+cat("Hodges-Lehmann   :", round(mw_a$estimate, 3),
+    "| IC 95% [", round(mw_a$conf.int[1], 3), ";",
+    round(mw_a$conf.int[2], 3), "]\n")
+cat("Taille d'effet r :", r_a, "\n")
+cat("p =", format(mw_a$p.value, scientific = TRUE, digits = 3),
+    "(jours consécutifs autocorrélés, voir S-10)\n")
+cat("\nLecture : en vacances, l'offre est réduite mais la fréquentation\n")
+cat("baisse davantage, donc chaque kilomètre produit porte moins de\n")
+cat("montées.\n")
 
-# --- 5.4 Test T-013a : Mann-Whitney NORMAL vs VACANCES ---
-
-cat("\n=== T-013a — MANN-WHITNEY : ratio montees/km NORMAL vs VACANCES ===\n")
-
-mw_t013a <- wilcox.test(
-  reseau_jour$ratio[reseau_jour$horaire_type == "NORMAL"],
-  reseau_jour$ratio[reseau_jour$horaire_type == "VACANCES"],
-  alternative = "two.sided",
-  conf.int    = TRUE,
-  conf.level  = 0.95
+enregistrer(
+  test_id = "T-013a", script = "13_offre_demande.R",
+  methode = "Mann-Whitney bilatéral, rapport montées/km par jour, NORMAL contre VACANCES",
+  n = nrow(t013a_data), statistique = as.numeric(mw_a$statistic), p_value = NA,
+  effet_nom = "Hodges-Lehmann (montées/km)", effet = round(as.numeric(mw_a$estimate), 3),
+  ic_inf = round(mw_a$conf.int[1], 3), ic_sup = round(mw_a$conf.int[2], 3),
+  note = paste0("Médianes ", round(med_normal, 2), " contre ",
+                round(med_vacances, 2), ". r = ", r_a, ". p exclue (S-10).")
 )
 
-n_t013a <- nrow(reseau_jour)
-z_t013a <- qnorm(mw_t013a$p.value / 2)
-r_t013a <- abs(z_t013a) / sqrt(n_t013a)
+# ── 5. T-013b : RAPPORT SELON LE MODE ───────────────────────
+# Comparaison principale : toutes les lignes. Robustesse : lignes
+# régulières seulement, sans les services particuliers (scolaire,
+# Noctambus), dont le rapport montées / km n'est pas comparable.
+# Comparaison entre lignes à un même moment : pas d'autocorrélation
+# temporelle, la p-value est publiée.
 
-cat("NORMAL   mediane :",
-    round(median(reseau_jour$ratio[reseau_jour$horaire_type == "NORMAL"]), 4),
-    "montees/km\n")
-cat("VACANCES mediane :",
-    round(median(reseau_jour$ratio[reseau_jour$horaire_type == "VACANCES"]), 4),
-    "montees/km\n")
-cat("W (statistique)  :", mw_t013a$statistic, "\n")
-cat("p-value          :", format(mw_t013a$p.value, scientific = TRUE), "\n")
-cat("Hodges-Lehmann   :", round(mw_t013a$estimate, 4), "montees/km\n")
-cat("IC 95%           : [", round(mw_t013a$conf.int[1], 4),
-    ";", round(mw_t013a$conf.int[2], 4), "]\n")
-cat("Taille effet r   :", round(r_t013a, 3), "\n")
-cat("->", ifelse(mw_t013a$p.value < 0.05,
-               "REJET H0 — ratio significativement different",
-               "NON-REJET H0"), "\n\n")
+type_ligne <- journalier %>%
+  filter(!is.na(ligne)) %>%
+  group_by(ligne) %>%
+  summarise(ligne_type_act = ligne_type_act[which.max(date)], .groups = "drop")
 
-cat("--- Conclusions formelles T-013a ---\n")
-cat("Ce qu'on peut affirmer :\n")
-if (mw_t013a$p.value < 0.05) {
-  cat("  - Le ratio montees/km est significativement plus bas en VACANCES\n")
-  cat("    (p =", format(mw_t013a$p.value, scientific = TRUE), ")\n")
-  cat("  - Montees :", baisse_mont_pct, "% | km_prod :", baisse_km_pct, "%\n")
-  cat("  - Ecart :", ecart_pp, "pp -> l'offre est structurellement\n")
-  cat("    plus rigide que la demande en periode de vacances\n")
-} else {
-  cat("  - Pas de difference significative du ratio entre NORMAL et VACANCES\n")
-  cat("  - Malgre l'ecart descriptif de", ecart_pp, "pp, la variabilite\n")
-  cat("    intra-groupe absorbe la difference\n")
-}
-cat("Ce qu'on NE peut PAS affirmer :\n")
-cat("  - Que cette rigidite est un dysfonctionnement : les contraintes\n")
-cat("    contractuelles et operationnelles (rotations conducteurs, depots)\n")
-cat("    limitent la flexibilite a court terme — non mesurable ici\n")
-cat("  - Que l'offre pourrait etre reduite sans impact sur le service\n")
-cat("    de base garanti aux usagers presents en vacances\n")
+ratio_ligne <- journalier %>%
+  filter(!is.na(ligne)) %>%
+  group_by(ligne) %>%
+  summarise(montees = sum(nb_de_montees, na.rm = TRUE), .groups = "drop") %>%
+  inner_join(km_prod %>% group_by(ligne) %>%
+               summarise(km = sum(km_prod, na.rm = TRUE), .groups = "drop"),
+             by = "ligne") %>%
+  filter(montees > 0, km > 0) %>%
+  mutate(ratio = montees / km,
+         mode = factor(mode_de(ligne), levels = c("Tram", "Trolleybus", "Autobus"))) %>%
+  left_join(type_ligne, by = "ligne")
 
-# [TPG] L'ecart montees/km VACANCES vs NORMAL (baisse_km_pct vs baisse_mont_pct)
-# quantifie le surdimensionnement de l'offre en vacances. A croiser avec les
-# donnees de cout marginal d'exploitation par ligne (non publiques) pour
-# estimer le cout de cette rigidite. Question pertinente pour la planification
-# du contrat de prestations 2025-2029.
-
-# =============================================================================
-# 6. SYN-006 — PROXY VITESSE COMMERCIALE : ÉVOLUTION TEMPORELLE 2016-2026
-# =============================================================================
-# Hypothese inductive apres exploration :
-# Si le ratio montees/km augmente au fil du temps -> le reseau devient plus efficient.
-# Si il baisse -> la croissance de l'offre depasse la croissance de la demande.
-# On teste la tendance : Spearman ratio x date (monotone, sans hypothese de linearite).
-
-# --- 6.1 Ratio par ligne sur la période commune (jours NORMAL uniquement) ---
-
-ratio_par_ligne <- offre_demande %>%
-  filter(horaire_type == "NORMAL") %>%
-  group_by(ligne, ligne_type_act) %>%
-  summarise(
-    montees_tot = sum(montees),
-    km_tot      = sum(km),
-    ratio       = sum(montees) / sum(km),
-    n_jours     = n_distinct(date),
-    .groups     = "drop"
-  ) %>%
-  filter(km_tot > 0, montees_tot > 0) %>%
-  arrange(desc(ratio))
-
-cat("\n=== 6. SYN-006 — RATIO PAR LIGNE (NORMAL, avr 2023 ->) ===\n")
-cat("--- TOP 10 ---\n")
-ratio_par_ligne %>%
-  head(10) %>%
-  dplyr::select(ligne, ligne_type_act, montees_tot, km_tot, ratio, n_jours) %>%
-  mutate(montees_tot = round(montees_tot / 1e6, 2),
-         km_tot      = round(km_tot / 1e6, 2)) %>%
-  print()
-
-cat("\n--- BOTTOM 10 ---\n")
-ratio_par_ligne %>%
-  tail(10) %>%
-  dplyr::select(ligne, ligne_type_act, montees_tot, km_tot, ratio, n_jours) %>%
-  mutate(montees_tot = round(montees_tot / 1e6, 2),
-         km_tot      = round(km_tot / 1e6, 2)) %>%
-  print()
-
-# --- 6.2 Évolution mensuelle 2016-2026 (mensuel.rds × km_prod agrégés) ---
-
-mensuel_agg <- mensuel %>%
-  filter(!ligne %in% exclus,
-         ligne_type_act %in% c("PRINCIPAL", "SECONDAIRE"),
-         !is.na(nb_de_montees)) %>%
-  group_by(date) %>%
-  summarise(montees_tot = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
-
-km_agg_mois <- km_prod %>%
-  filter(!ligne %in% exclus,
-         ligne_type_act %in% c("PRINCIPAL", "SECONDAIRE")) %>%
-  mutate(mois_date = floor_date(date, "month")) %>%
-  group_by(mois_date) %>%
-  summarise(km_tot = sum(km_col, na.rm = TRUE), .groups = "drop") %>%
-  rename(date = mois_date)
-
-ratio_mensuel <- mensuel_agg %>%
-  inner_join(km_agg_mois, by = "date") %>%
-  filter(km_tot > 0, montees_tot > 0) %>%
-  mutate(ratio = montees_tot / km_tot,
-         annee = year(date),
-         t     = as.numeric(date)) %>%
-  arrange(date)
-
-cat("\n--- Evolution annuelle du ratio reseau (mediane) ---\n")
-ratio_mensuel %>%
-  group_by(annee) %>%
-  summarise(n = n(), med_ratio = round(median(ratio), 4), .groups = "drop") %>%
-  print()
-
-# --- 6.3 Test T-013c : tendance monotone Spearman ---
-
-cat("\n=== T-013c — SPEARMAN : tendance temporelle du ratio 2016-2026 ===\n")
-cat("Hypothese H0 : pas de tendance monotone du ratio dans le temps\n")
-cat("Hypothese H1 : tendance monotone (hausse ou baisse) — bilateral\n\n")
-
-# Exclure COVID (2020-2021) pour tester la tendance structurelle
-ratio_hors_covid <- ratio_mensuel %>%
-  filter(!(annee %in% c(2020, 2021)))
-
-# --- Ljung-Box : autocorrelation de la serie hors COVID (prerequis Spearman) ---
-# H0 : residus independants -> Spearman valide
-# H1 : autocorrelation (p < 0.05) -> p-value Spearman biaisee -> retrograder en LOESS
-
-lb_t013c      <- Box.test(ratio_hors_covid$ratio, lag = 12, type = "Ljung-Box")
-ljung_autocorr <- lb_t013c$p.value < 0.05
-
-cat("--- Ljung-Box (lag=12) : autocorrelation serie ratio hors COVID ---\n")
-cat("X-squared :", round(lb_t013c$statistic, 3),
-    "| df =", lb_t013c$parameter, "\n")
-cat("p-value   :", format(lb_t013c$p.value, digits = 4, scientific = FALSE), "\n")
-cat("->", ifelse(ljung_autocorr,
-               "AUTOCORRELATION CONFIRMEE (p < 0.05) — Spearman retrogradee en descriptif LOESS",
-               "Pas d'autocorrelation significative — Spearman valide"), "\n\n")
-
-sp_t013c <- cor.test(ratio_hors_covid$t, ratio_hors_covid$ratio,
-                     method = "spearman")
-
-cat("Serie hors COVID (2020-2021) : n =", nrow(ratio_hors_covid), "mois\n")
-if (!ljung_autocorr) {
-  cat("Spearman rho :", round(sp_t013c$estimate, 3), "\n")
-  cat("p-value      :", format(sp_t013c$p.value, scientific = TRUE), "\n")
-  cat("->", ifelse(sp_t013c$p.value < 0.05,
-                 ifelse(sp_t013c$estimate > 0,
-                        "REJET H0 — ratio augmente : reseau plus efficient au fil du temps",
-                        "REJET H0 — ratio baisse : croissance offre > croissance demande"),
-                 "NON-REJET H0 — pas de tendance monotone claire"), "\n\n")
-} else {
-  cat("LIMITE : autocorrelation confirmee — p-value Spearman non fiable.\n")
-  cat("Analyse retrogradee : tendance LOESS uniquement (visuelle, non testee).\n")
-  cat("Spearman rho (informatif, NON conclusif) :",
-      round(sp_t013c$estimate, 3), "\n\n")
+resumer <- function(d) {
+  d %>% group_by(mode) %>%
+    summarise(n = n(), mediane = round(median(ratio), 2),
+              min = round(min(ratio), 2), max = round(max(ratio), 2),
+              .groups = "drop")
 }
 
-# Note : on teste aussi sur serie complete pour reference
-sp_complet <- cor.test(ratio_mensuel$t, ratio_mensuel$ratio,
-                       method = "spearman")
-cat("Reference serie complete (avec COVID) : rho =",
-    round(sp_complet$estimate, 3),
-    "p =", format(sp_complet$p.value, scientific = TRUE), "\n\n")
+resume_mode <- resumer(ratio_ligne)
+reguliers   <- ratio_ligne %>%
+  filter(!ligne_type_act %in% c("SCOLAIRE", "NOCTAMBUS REGIONAL"))
+resume_reg  <- resumer(reguliers)
 
-cat("--- Conclusions formelles T-013c ---\n")
-cat("Ce qu'on peut affirmer :\n")
-if (!ljung_autocorr && sp_t013c$p.value < 0.05) {
-  if (sp_t013c$estimate > 0) {
-    cat("  - Tendance haussiere du ratio montees/km (rho =",
-        round(sp_t013c$estimate, 3), ") — reseau plus efficient\n")
-    cat("  - La demande croit plus vite que l'offre sur la periode\n")
-  } else {
-    cat("  - Tendance baissiere du ratio montees/km (rho =",
-        round(sp_t013c$estimate, 3), ")\n")
-    cat("  - L'offre (km_prod) croit plus vite que la demande\n")
-    cat("  - Peut refleter l'expansion du reseau (contrat 2025-2029)\n")
-  }
-} else if (ljung_autocorr) {
-  cat("  - La tendance LOESS indique une evolution descriptive du ratio 2016-2026\n")
-  cat("    (direction visible graphiquement — non testee formellement)\n")
-  cat("  - Autocorrelation detectee (Ljung-Box p < 0.05) : Spearman retrogradee ;\n")
-  cat("    rho =", round(sp_t013c$estimate, 3), "fourni a titre informatif seulement\n")
-} else {
-  cat("  - Pas de tendance monotone significative (rho =",
-      round(sp_t013c$estimate, 3),
-      "p =", format(sp_t013c$p.value, scientific = TRUE), ")\n")
-  cat("  - Le ratio reste relativement stable hors choc COVID\n")
-}
-cat("Ce qu'on NE peut PAS affirmer :\n")
-cat("  - Que la tendance est lineaire (Spearman teste la monotonie seule)\n")
-cat("  - Que les variations ponctuelles refletent des decisions\n")
-cat("    operationnelles (facteurs saisonniers non isoles ici)\n")
-cat("  - Que la tendance reflete une evolution pure de l'efficience :\n")
-cat("    le perimetre n'est pas strictement stable 2016-2026 (entrees et\n")
-cat("    sorties de lignes meme apres exclusions CX/Noctambus/GLCT) —\n")
-cat("    biais de composition non eliminable sur serie longue\n")
+cat("\n=== T-013b : RAPPORT MONTÉES / KM SELON LE MODE ===\n")
+cat("Toutes les lignes :\n")
+print(as.data.frame(resume_mode))
 
-# =============================================================================
-# 7. SYN-010 — TRAMS VS BUS : L'EFFICIENCE DU SITE PROPRE EST-ELLE PROUVÉE ?
-# =============================================================================
-# T-008 a montre graphiquement que les trams forment une droite parallele
-# au-dessus de la regression principale. On le teste formellement.
-#
-# Lignes tram TPG (site propre integral) : 12, 14, 15, 17, 18
-# Toutes les autres lignes = bus (PRINCIPAL ou SECONDAIRE dans ratio_par_ligne)
-#
-# H0 : ratio montees/km identique entre trams et bus
-# H1 : different (bilateral — sens confirme par IC Hodges-Lehmann)
-# Test : Mann-Whitney (non-parametrique — n_tram faible)
-# Limite : n_tram = 5 -> puissance statistique reduite
+kw_b   <- kruskal.test(ratio ~ mode, data = ratio_ligne)
+kw_reg <- kruskal.test(ratio ~ mode, data = reguliers)
+cat("\nKruskal-Wallis : H =", round(kw_b$statistic, 3),
+    "| ddl =", kw_b$parameter,
+    "| p =", format(kw_b$p.value, digits = 3), "\n")
 
-lignes_tram <- c("12", "14", "15", "17", "18")
+cat("\nRobustesse, lignes régulières (sans scolaire ni Noctambus) :\n")
+print(as.data.frame(resume_reg))
+cat("Kruskal-Wallis : H =", round(kw_reg$statistic, 3),
+    "| p =", format(kw_reg$p.value, digits = 3), "\n")
 
-# Verification croisee : couverture temporelle et volume pour les 5 trams
-cat("--- Verification croisee trams : n_jours et km_tot ---\n")
-ratio_par_ligne %>%
-  filter(ligne %in% lignes_tram) %>%
-  mutate(km_M      = round(km_tot / 1e6, 3),
-         montees_M = round(montees_tot / 1e6, 3)) %>%
-  dplyr::select(ligne, ligne_type_act, n_jours, km_M, montees_M, ratio) %>%
-  arrange(ligne) %>%
-  print()
-cat("\n")
+cat("\nEffectifs : tram", resume_mode$n[resume_mode$mode == "Tram"],
+    "lignes, trolleybus", resume_mode$n[resume_mode$mode == "Trolleybus"],
+    "lignes. Avec des effectifs aussi faibles, la puissance du test\n")
+cat("est limitée et l'estimation peu précise.\n")
 
-trams_dispo <- intersect(lignes_tram, ratio_par_ligne$ligne)
-cat("=== 7. SYN-010 — TRAMS VS BUS ===\n")
-cat("Trams attendus  :", paste(lignes_tram, collapse = ", "), "\n")
-cat("Trams dans data :", paste(trams_dispo, collapse = ", "), "\n\n")
+cat("\n--- Ce que ce résultat dit, et ce qu'il ne dit pas ---\n")
+cat("Il dit : les lignes de tram portent plus de montées par kilomètre\n")
+cat("  produit que les autres modes.\n")
+cat("Il ne dit pas : que le tram serait plus efficace en soi.\n")
+cat("  Une rame de tram offre plusieurs fois la capacité d'un autobus,\n")
+cat("  donc un rapport plus élevé par kilomètre est attendu (S-19).\n")
+cat("  Les cinq lignes de tram desservent en outre les axes les plus\n")
+cat("  denses du réseau : la comparaison oppose des contextes, pas\n")
+cat("  seulement des modes.\n")
+cat("Il ne dit rien de l'infrastructure : ces données ne contiennent\n")
+cat("  aucune information sur le site propre (S-12).\n")
+cat("Aucune conclusion sur l'opportunité d'étendre le réseau de tram\n")
+cat("  ne peut sortir de ce calcul.\n")
 
-ratio_mode <- ratio_par_ligne %>%
-  mutate(mode = ifelse(ligne %in% lignes_tram, "Tram", "Bus"))
-
-cat("--- Distribution par mode ---\n")
-ratio_mode %>%
-  group_by(mode) %>%
-  summarise(
-    n         = n(),
-    med_ratio = round(median(ratio), 3),
-    moy_ratio = round(mean(ratio), 3),
-    min_ratio = round(min(ratio), 3),
-    max_ratio = round(max(ratio), 3),
-    .groups   = "drop"
-  ) %>%
-  print()
-
-cat("\n--- Normalite par mode (Shapiro-Wilk) ---\n")
-cat("Note : n_tram =", sum(ratio_mode$mode == "Tram"),
-    "— test de faible puissance pour ce groupe\n")
-for (md in c("Tram", "Bus")) {
-  vals <- ratio_mode$ratio[ratio_mode$mode == md]
-  if (length(vals) >= 3) {
-    sw <- shapiro.test(vals)
-    cat(sprintf("  %-5s n=%-3d W=%.3f p=%.4f %s\n",
-                md, length(vals), sw$statistic, sw$p.value,
-                ifelse(sw$p.value < 0.05, "-> NON normale", "-> normale")))
-  }
-}
-
-cat("\n=== T-013b — MANN-WHITNEY : ratio montees/km TRAM vs BUS ===\n")
-cat("Limite : n_tram =", sum(ratio_mode$mode == "Tram"),
-    "-> puissance statistique reduite. Resultat a interpreter avec prudence.\n\n")
-
-tram_r <- ratio_mode$ratio[ratio_mode$mode == "Tram"]
-bus_r  <- ratio_mode$ratio[ratio_mode$mode == "Bus"]
-
-mw_t013b <- wilcox.test(
-  tram_r, bus_r,
-  alternative = "two.sided",
-  conf.int    = TRUE,
-  conf.level  = 0.95
+enregistrer(
+  test_id = "T-013b", script = "13_offre_demande.R",
+  methode = "Kruskal-Wallis, rapport montées/km par ligne selon le mode",
+  n = nrow(ratio_ligne), statistique = round(as.numeric(kw_b$statistic), 3),
+  p_value = signif(kw_b$p.value, 3),
+  effet_nom = "médiane tram / médiane autobus",
+  effet = round(resume_mode$mediane[resume_mode$mode == "Tram"] /
+                  resume_mode$mediane[resume_mode$mode == "Autobus"], 2),
+  note = paste0("Effectifs ", paste(resume_mode$mode, resume_mode$n,
+                                    sep = " = ", collapse = ", "),
+                ". Lignes hors dataset collisions classées autobus (S-31). ",
+                "Lignes régulières seules : médiane autobus ",
+                resume_reg$mediane[resume_reg$mode == "Autobus"], ", rapport tram / autobus ",
+                round(resume_reg$mediane[resume_reg$mode == "Tram"] /
+                        resume_reg$mediane[resume_reg$mode == "Autobus"], 2), ". ",
+                "Capacité non prise en compte (S-19), infrastructure non mesurable (S-12).")
 )
 
-n_t013b <- length(tram_r) + length(bus_r)
-z_t013b <- qnorm(mw_t013b$p.value / 2)
-r_t013b <- abs(z_t013b) / sqrt(n_t013b)
+# ── 6. T-013c : ÉVOLUTION DU RAPPORT DANS LE TEMPS ──────────
+# Corrélation de rang entre le mois et le rapport mensuel.
+# L'autocorrélation de la série rend la p-value optimiste : on
+# calcule la taille d'échantillon effective et on publie rho.
 
-cat("Tram mediane  :", round(median(tram_r), 3), "montees/km\n")
-cat("Bus  mediane  :", round(median(bus_r), 3), "montees/km\n")
-cat("Hodges-Lehmann:", round(mw_t013b$estimate, 3), "montees/km\n")
-cat("IC 95%        : [", round(mw_t013b$conf.int[1], 3),
-    ";", round(mw_t013b$conf.int[2], 3), "]\n")
-cat("p-value       :", format(mw_t013b$p.value, scientific = TRUE), "\n")
-cat("Taille effet r:", round(r_t013b, 3), "\n")
-cat("->", ifelse(mw_t013b$p.value < 0.05,
-               "REJET H0 — trams significativement plus efficients",
-               "NON-REJET H0 — difference non prouvee formellement"), "\n\n")
+ratio_mensuel <- reseau_jour %>%
+  mutate(mois = floor_date(date, "month")) %>%
+  group_by(mois) %>%
+  summarise(km = sum(km), montees = sum(montees), .groups = "drop") %>%
+  mutate(ratio = montees / km, rang_mois = row_number()) %>%
+  arrange(mois)
 
-cat("--- Conclusions formelles T-013b ---\n")
-cat("Ce qu'on peut affirmer :\n")
-if (mw_t013b$p.value < 0.05) {
-  cat("  - Les trams generent plus de montees/km que les bus\n")
-  cat("    (p =", format(mw_t013b$p.value, scientific = TRUE), ")\n")
-  cat("  - Difference estimee : +", round(mw_t013b$estimate, 2), "montees/km\n")
-  cat("  - IC 95% [", round(mw_t013b$conf.int[1], 2),
-      ";", round(mw_t013b$conf.int[2], 2), "] — direction prouvee\n")
-  cat("  - Coherent avec T-008 : les trams au-dessus de la droite de regression\n")
-  cat("  - L'efficience structurelle du site propre est formellement etablie\n")
-} else {
-  cat("  - Difference descriptive (trams", round(median(tram_r), 3),
-      "vs bus", round(median(bus_r), 3), ") non prouvee formellement\n")
-  cat("  - Cause probable : n_tram = 5 -> puissance insuffisante\n")
-  cat("  - Le signal visuel de T-008 reste la reference disponible\n")
+sp_c <- suppressWarnings(cor.test(ratio_mensuel$rang_mois, ratio_mensuel$ratio,
+                                  method = "spearman"))
+
+acf_ratio <- acf(ratio_mensuel$ratio, plot = FALSE, lag.max = 3)
+r1_ratio <- as.numeric(acf_ratio$acf[2])
+n_eff_ratio <- round(nrow(ratio_mensuel) * (1 - r1_ratio) / (1 + r1_ratio), 1)
+
+cat("\n=== T-013c : ÉVOLUTION DU RAPPORT DANS LE TEMPS ===\n")
+cat("Mois :", nrow(ratio_mensuel), "de", format(min(ratio_mensuel$mois)),
+    "à", format(max(ratio_mensuel$mois)), "\n")
+cat("Rapport au premier mois :", round(ratio_mensuel$ratio[1], 2),
+    "| au dernier :", round(ratio_mensuel$ratio[nrow(ratio_mensuel)], 2),
+    "| variation :",
+    round(100 * (ratio_mensuel$ratio[nrow(ratio_mensuel)] /
+                   ratio_mensuel$ratio[1] - 1), 1), "%\n")
+cat("Spearman rho =", round(as.numeric(sp_c$estimate), 3),
+    "| p =", format(sp_c$p.value, digits = 3), "\n")
+cat("Autocorrélation au premier retard :", round(r1_ratio, 3), "\n")
+cat("Observations effectives :", n_eff_ratio, "sur", nrow(ratio_mensuel), "\n")
+cat("La p-value ci-dessus suppose des mois indépendants, ce qu'ils ne\n")
+cat("sont pas. C'est rho et l'amplitude de la variation qui comptent.\n")
+
+enregistrer(
+  test_id = "T-013c", script = "13_offre_demande.R",
+  methode = "Corrélation de Spearman entre le rang du mois et le rapport montées/km",
+  n = nrow(ratio_mensuel), statistique = NA, p_value = NA,
+  effet_nom = "Spearman rho", effet = round(as.numeric(sp_c$estimate), 3),
+  note = paste0("Variation du rapport sur la période : ",
+                round(100 * (ratio_mensuel$ratio[nrow(ratio_mensuel)] /
+                               ratio_mensuel$ratio[1] - 1), 1),
+                " %. n effectif environ ", n_eff_ratio, " (S-10).")
+)
+
+# ── 6b. T-013d : MONTÉES PAR KM DEPUIS 2016 (S-35) ──────────
+# T-013c ne couvre que la période du journalier (depuis 02.2023).
+# Le mensuel et les km produits remontent à 2016 : on suit le
+# rapport annuel sur toute la période, années complètes seulement.
+# Trois lectures :
+#   1. réseau complet ;
+#   2. décomposition (comme S-34) : évolution à type de ligne
+#      constant (intra) et déplacement des km entre types (structure) ;
+#   3. périmètre constant : lignes présentes tous les mois de la
+#      première et de la dernière année complètes. Réserve (S-32) :
+#      ce périmètre perd les lignes supprimées ou renumérotées.
+# Le type d'une ligne est celui de son mois le plus récent.
+
+mensuel <- lire("mensuel") %>%
+  filter(!is.na(ligne)) %>%
+  mutate(date = ym(mois)) %>%
+  filter(date <= DATE_COUPURE)
+
+m_ligne <- mensuel %>%
+  group_by(date, ligne) %>%
+  summarise(M = sum(nb_de_montees, na.rm = TRUE), .groups = "drop")
+k_ligne <- km_prod %>%
+  mutate(date = floor_date(as.Date(date), "month")) %>%
+  group_by(date, ligne) %>%
+  summarise(K = sum(km_prod, na.rm = TRUE), .groups = "drop")
+type_recent <- mensuel %>%
+  group_by(ligne) %>%
+  summarise(type = ligne_type_act[which.max(date)], .groups = "drop")
+
+ligne_mois <- full_join(m_ligne, k_ligne, by = c("date", "ligne")) %>%
+  mutate(M = coalesce(M, 0), K = coalesce(K, 0), an = year(date))
+
+coherence <- ligne_mois %>%
+  summarise(montees_sans_km_pct = round(100 * sum(M[K == 0]) / sum(M), 2),
+            km_sans_montees_pct = round(100 * sum(K[M == 0]) / sum(K), 2))
+
+ligne_mois <- ligne_mois %>%
+  filter(M > 0, K > 0) %>%
+  left_join(type_recent, by = "ligne")
+
+annees_d <- ligne_mois %>% distinct(an, date) %>% count(an) %>%
+  filter(n == 12) %>% pull(an)
+AN_DEBUT <- min(annees_d); AN_FIN <- max(annees_d)
+
+annuel_d <- ligne_mois %>%
+  filter(an %in% annees_d) %>%
+  group_by(an) %>%
+  summarise(montees_M = sum(M) / 1e6, km_M = sum(K) / 1e6, .groups = "drop") %>%
+  mutate(montees_par_km = montees_M / km_M,
+         indice_montees = round(100 * montees_M / montees_M[1]),
+         indice_km      = round(100 * km_M / km_M[1]),
+         indice_rapport = round(100 * montees_par_km / montees_par_km[1], 1))
+
+var_rapport <- function(a0, a1) {
+  r <- annuel_d$montees_par_km
+  round(100 * (r[annuel_d$an == a1] / r[annuel_d$an == a0] - 1), 1)
 }
-cat("Ce qu'on NE peut PAS affirmer :\n")
-cat("  - Que l'extension du reseau tram garantirait ce ratio :\n")
-cat("    les trams desservent les axes les plus denses (correlation vs causalite)\n")
-cat("  - Que les bus sont sous-performants : ils operent dans des\n")
-cat("    contextes de densite structurellement differents\n")
 
-# [TPG] Le ratio trams > bus chiffre l'argument d'investissement
-# ferroviaire. A croiser avec les couts d'investissement km de voie
-# (non publics) pour un ROI complet sur le contrat 2025-2029.
+decomposer_d <- function(y0, y1) {
+  s <- function(y) ligne_mois %>% filter(an == y) %>% group_by(type) %>%
+    summarise(M = sum(M), K = sum(K), .groups = "drop")
+  a <- full_join(s(y0), s(y1), by = "type", suffix = c("0", "1")) %>%
+    mutate(across(-type, ~ coalesce(., 0)),
+           w0 = K0 / sum(K0), w1 = K1 / sum(K1),
+           r0 = ifelse(K0 > 0, M0 / K0, NA), r1 = ifelse(K1 > 0, M1 / K1, NA))
+  R0 <- sum(a$M0) / sum(a$K0); R1 <- sum(a$M1) / sum(a$K1)
+  b <- a %>% filter(K0 > 0, K1 > 0)
+  intra  <- sum((b$w0 + b$w1) / 2 * (b$r1 - b$r0))
+  struct <- sum((b$r0 + b$r1) / 2 * (b$w1 - b$w0))
+  list(detail = a %>% transmute(type, part_km_debut = round(100 * w0, 1),
+                                part_km_fin = round(100 * w1, 1),
+                                var_montees_km = round(100 * (r1 / r0 - 1), 1)),
+       resume = data.frame(comparaison = paste0(y0, " vers ", y1),
+                           total = round(100 * (R1 / R0 - 1), 1),
+                           intra = round(100 * intra / R0, 1),
+                           structure = round(100 * struct / R0, 1),
+                           types_entrants_sortants = round(100 * ((R1 - R0) - intra - struct) / R0, 1)))
+}
 
-# =============================================================================
-# 8. VISUALISATIONS
-# NOTE VIZ : candidats Python / Power BI final
-# =============================================================================
+dec_debut <- decomposer_d(AN_DEBUT, AN_FIN)
+dec_2019  <- decomposer_d(2019, AN_FIN)
 
-# --- VIZ 1 : Scatter km_prod x montees colore NORMAL vs VACANCES ---
-# NOTE VIZ : bicolore — gap offre/demande visible en un coup d'oeil
+presence <- ligne_mois %>%
+  filter(an %in% c(AN_DEBUT, AN_FIN)) %>%
+  group_by(ligne) %>%
+  summarise(n_debut = n_distinct(date[an == AN_DEBUT]),
+            n_fin   = n_distinct(date[an == AN_FIN]), .groups = "drop")
+lignes_cst <- presence$ligne[presence$n_debut == 12 & presence$n_fin == 12]
+part_cst <- function(y) round(100 * sum(ligne_mois$M[ligne_mois$an == y & ligne_mois$ligne %in% lignes_cst]) /
+                                sum(ligne_mois$M[ligne_mois$an == y]), 1)
+annuel_cst <- ligne_mois %>%
+  filter(ligne %in% lignes_cst, an %in% annees_d) %>%
+  group_by(an) %>%
+  summarise(M = sum(M), K = sum(K), .groups = "drop") %>%
+  mutate(r = M / K,
+         indice_montees = round(100 * M / M[1]),
+         indice_km      = round(100 * K / K[1]),
+         indice_rapport = round(100 * r / r[1], 1))
+var_cst <- function(a0, a1) round(100 * (annuel_cst$r[annuel_cst$an == a1] /
+                                           annuel_cst$r[annuel_cst$an == a0] - 1), 1)
 
-p_scatter <- reseau_jour %>%
-  ggplot(aes(x = km_tot / 1000, y = montees_tot / 1000,
-             color = horaire_type, alpha = horaire_type)) +
-  geom_point(size = 1.5) +
-  geom_smooth(method = "lm", se = FALSE, linewidth = 1, linetype = "dashed") +
-  scale_color_manual(
-    values = c("NORMAL" = TPG_RED, "VACANCES" = "#4A6FA5"),
-    labels = c("NORMAL" = "Jours NORMAL", "VACANCES" = "Jours VACANCES")
-  ) +
-  scale_alpha_manual(
-    values = c("NORMAL" = 0.3, "VACANCES" = 0.65),
-    guide  = "none"
-  ) +
-  scale_x_continuous(labels = label_number(suffix = "k km")) +
-  scale_y_continuous(labels = label_number(suffix = "k")) +
-  annotate("text",
-           x = quantile(reseau_jour$km_tot / 1000, 0.02),
-           y = max(reseau_jour$montees_tot / 1000) * 0.95,
-           label = paste0(
-             "Montees vacances : ", baisse_mont_pct, "%\n",
-             "km_prod vacances : ", baisse_km_pct, "%\n",
-             "Ecart : ", ecart_pp, " pp"
-           ),
-           hjust = 0, size = 3, color = COL_REF) +
-  labs(
-    title    = "Offre vs Demande — km produits x montees par jour",
-    subtitle = paste0(
-      "Reseau PRINCIPAL + SECONDAIRE | avr. 2023 -> fev. 2026 | ",
-      "T-013a MW p=", format(mw_t013a$p.value, digits = 2, scientific = TRUE),
-      " r=", round(r_t013a, 3)
-    ),
-    x       = "km produits / jour (reseau)",
-    y       = "Montees / jour (reseau)",
-    color   = "Periode",
-    caption = "Source : opendata.tpg.ch | Frat DAG 2026"
-  ) +
-  theme_tpg() +
-  theme(axis.text.x = element_text(angle = 0))
+cat("\n=== T-013d : MONTÉES PAR KM DEPUIS", AN_DEBUT, "(S-35) ===\n")
+cat("Cohérence ligne par ligne : montées sans km", coherence$montees_sans_km_pct,
+    "% | km sans montées", coherence$km_sans_montees_pct, "%\n")
+cat("Années complètes :", AN_DEBUT, "à", AN_FIN, "\n\n")
+print(as.data.frame(annuel_d %>% mutate(across(c(montees_M, km_M, montees_par_km), ~ round(., 2)))),
+      row.names = FALSE)
+cat("\nRéseau complet : rapport", var_rapport(AN_DEBUT, AN_FIN), "% de", AN_DEBUT, "à", AN_FIN,
+    "|", var_rapport(2019, AN_FIN), "% depuis 2019\n")
 
-ggsave(here::here("figures/13_scatter_offre_demande.png"),
-       p_scatter, width = 10, height = 6, dpi = 150)
-cat("\nGraphique sauvegarde : figures/13_scatter_offre_demande.png\n")
+cat("\nDécomposition (points de %) :\n")
+print(bind_rows(dec_debut$resume, dec_2019$resume), row.names = FALSE)
+cat("\nDétail", AN_DEBUT, "vers", AN_FIN, "par type (type le plus récent de chaque ligne) :\n")
+print(as.data.frame(dec_debut$detail), row.names = FALSE)
 
-# --- VIZ 2 : Evolution temporelle ratio montees/km 2016-2026 ---
-# NOTE VIZ : serie longue avec ruptures — narrative COVID + efficience
+cat("\nPérimètre constant :", length(lignes_cst), "lignes présentes tous les mois de",
+    AN_DEBUT, "et de", AN_FIN, "\n")
+cat("  Part des montées couverte :", part_cst(AN_DEBUT), "% en", AN_DEBUT, "|",
+    part_cst(AN_FIN), "% en", AN_FIN, "\n")
+print(as.data.frame(annuel_cst %>% select(an, indice_montees, indice_km, indice_rapport)),
+      row.names = FALSE)
+cat("  Rapport :", var_cst(AN_DEBUT, AN_FIN), "% de", AN_DEBUT, "à", AN_FIN, "|",
+    var_cst(2019, AN_FIN), "% depuis 2019\n")
 
-y_max_r <- max(ratio_mensuel$ratio, na.rm = TRUE)
+cat("\nLecture : l'offre a augmenté bien plus vite que la fréquentation.\n")
+cat("Le déplacement des km vers des lignes moins chargées (structure) explique\n")
+cat(-dec_debut$resume$structure, "point(s) de la baisse depuis", AN_DEBUT, "et",
+    -dec_2019$resume$structure, "depuis 2019. Le reste est une baisse du rapport\n")
+cat("à type de ligne constant, que le périmètre constant confirme.\n")
+cat("Le niveau d'avant 2020 n'est pas retrouvé. Ces données ne permettent pas\n")
+cat("d'en identifier la cause.\n\n")
 
-p_ratio_evo <- ggplot(ratio_mensuel, aes(x = date, y = ratio)) +
-  geom_line(color = TPG_RED, linewidth = 0.7, alpha = 0.8) +
-  geom_smooth(method = "loess", span = 0.2, se = FALSE,
-              color = COL_REF, linewidth = 1, linetype = "dashed") +
-  geom_vline(xintercept = as.Date("2020-03-01"),
-             linetype = "dotted", color = COL_COVID, linewidth = 0.9) +
-  geom_vline(xintercept = as.Date("2019-12-01"),
-             linetype = "dotted", color = COL_NEUTRE, linewidth = 0.6) +
-  geom_vline(xintercept = as.Date("2023-12-01"),
-             linetype = "dotted", color = COL_NEUTRE, linewidth = 0.6) +
-  geom_vline(xintercept = as.Date("2025-01-01"),
-             linetype = "dotted", color = COL_GRATUITE, linewidth = 0.9) +
-  annotate("text", x = as.Date("2020-04-01"), y = y_max_r * 0.97,
-           label = "COVID", hjust = 0, size = 2.8, color = COL_COVID) +
-  annotate("text", x = as.Date("2019-10-01"), y = y_max_r * 0.84,
-           label = "Leman\nExpress", hjust = 1, size = 2.5, color = COL_NEUTRE) +
-  annotate("text", x = as.Date("2023-10-01"), y = y_max_r * 0.84,
-           label = "Abs.\nNocta.", hjust = 1, size = 2.5, color = COL_NEUTRE) +
-  annotate("text", x = as.Date("2025-02-01"), y = y_max_r * 0.97,
-           label = "Gratuite\njeunes", hjust = 0, size = 2.8, color = COL_GRATUITE) +
-  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
-  labs(
-    title    = "Evolution du ratio montees/km produit — reseau TPG 2016-2026",
-    subtitle = if (!ljung_autocorr) {
-      paste0("PRINCIPAL + SECONDAIRE | Tendance Spearman rho=",
-             round(sp_t013c$estimate, 3),
-             " (hors COVID) | Pointille = tendance LOESS")
-    } else {
-      paste0("PRINCIPAL + SECONDAIRE | Tendance LOESS (Spearman retrogradee — autocorrelation) | ",
-             "rho=", round(sp_t013c$estimate, 3), " informatif")
-    },
-    x       = NULL,
-    y       = "Montees / km produit",
-    caption = "Source : opendata.tpg.ch | Frat DAG 2026"
-  ) +
-  theme_tpg()
+enregistrer(
+  test_id = "T-013d", script = "13_offre_demande.R",
+  methode = paste0("Montées/km annuelles ", AN_DEBUT, "-", AN_FIN,
+                   " (mensuel et km produits), décomposition intra-type et structure, périmètre constant"),
+  n = length(annees_d), statistique = NA, p_value = NA,
+  effet_nom = paste0("variation du rapport montées/km ", AN_DEBUT, " à ", AN_FIN, " (%)"),
+  effet = var_rapport(AN_DEBUT, AN_FIN),
+  note = paste0("Montées +", annuel_d$indice_montees[annuel_d$an == AN_FIN] - 100, " %, km +",
+                annuel_d$indice_km[annuel_d$an == AN_FIN] - 100, " %. Depuis 2019 : ",
+                var_rapport(2019, AN_FIN), " %. Décomposition ", AN_DEBUT, "-", AN_FIN,
+                " : intra ", dec_debut$resume$intra, ", structure ", dec_debut$resume$structure,
+                ", types disparus ", dec_debut$resume$types_entrants_sortants,
+                ". Périmètre constant (", length(lignes_cst), " lignes, ", part_cst(AN_DEBUT),
+                " à ", part_cst(AN_FIN), " % des montées) : ", var_cst(AN_DEBUT, AN_FIN),
+                " %, depuis 2019 ", var_cst(2019, AN_FIN), " % (S-35).")
+)
 
-ggsave(here::here("figures/13_evolution_ratio_mensuel.png"),
-       p_ratio_evo, width = 12, height = 6, dpi = 150)
-cat("Graphique sauvegarde : figures/13_evolution_ratio_mensuel.png\n")
+# ── 7. FIGURES ──────────────────────────────────────────────
 
-# --- VIZ 3 : Boxplot ratio montees/km Tram vs Bus ---
-# NOTE VIZ : argument visuel fort pour investissement ferroviaire
+p_mode <- ggplot(ratio_ligne, aes(x = mode, y = ratio, fill = mode)) +
+  geom_boxplot(alpha = 0.55, outlier.shape = NA, width = 0.5) +
+  geom_jitter(aes(color = mode), width = 0.12, height = 0, size = 2.2, alpha = 0.8) +
+  scale_fill_manual(values = c("Tram" = ROUGE_PRINCIPAL, "Trolleybus" = COL_LEMAN,
+                               "Autobus" = COL_NEUTRE), guide = "none") +
+  scale_color_manual(values = c("Tram" = ROUGE_PRINCIPAL, "Trolleybus" = COL_LEMAN,
+                                "Autobus" = COL_NEUTRE), guide = "none") +
+  labs(title = "Montées par kilomètre produit, selon le mode",
+       subtitle = paste0("Une ligne par point, ", nrow(ratio_ligne), " lignes. ",
+                         "Modes identifiés dans les données tpg. Médianes : ",
+                         paste(resume_mode$mode, resume_mode$mediane,
+                               sep = " ", collapse = ", "), "."),
+       x = NULL, y = "Montées par kilomètre",
+       caption = paste(SOURCE_TPG,
+                       "La capacité des véhicules n'entre pas dans ce rapport.",
+                       sep = "\n")) +
+  theme_projet() + theme(panel.grid.major.x = element_blank())
 
-p_tram_bus <- ggplot(ratio_mode,
-                     aes(x = mode, y = ratio, fill = mode)) +
-  geom_boxplot(outlier.shape = 21, outlier.size = 2.5,
-               outlier.fill = "white", alpha = 0.85) +
-  geom_jitter(width = 0.15, alpha = 0.6, size = 2.5, color = "grey30") +
-  geom_text(data = ratio_mode %>% filter(mode == "Tram"),
-            aes(label = ligne),
-            vjust = -0.9, size = 3.2, color = COL_REF) +
-  scale_fill_manual(values = c("Tram" = TPG_RED, "Bus" = "#4A6FA5")) +
-  labs(
-    title    = "Efficience par mode — Trams vs Bus",
-    subtitle = paste0(
-      "Ratio montees/km (jours NORMAL) | ",
-      "MW p=", format(mw_t013b$p.value, digits = 2, scientific = TRUE),
-      " | r=", round(r_t013b, 3),
-      " | Trams : ", paste(trams_dispo, collapse = ", ")
-    ),
-    x       = "Mode",
-    y       = "Montees / km produit",
-    caption = "Source : opendata.tpg.ch | avr. 2023 -> fev. 2026 | Frat DAG 2026"
-  ) +
-  theme_tpg() +
-  theme(legend.position = "none")
+print(p_mode)
+ggsave(file.path(DIR_FIG, "13_ratio_par_mode.png"), p_mode, width = 9, height = 7, dpi = 150)
 
-ggsave(here::here("figures/13_boxplot_tram_bus.png"),
-       p_tram_bus, width = 8, height = 6, dpi = 150)
-cat("Graphique sauvegarde : figures/13_boxplot_tram_bus.png\n")
+p_temps <- ggplot(ratio_mensuel, aes(x = mois, y = ratio)) +
+  geom_line(color = ROUGE_PRINCIPAL, linewidth = 0.8) +
+  geom_vline(xintercept = D_ETAPE_DEC2024, linetype = "dashed",
+             color = COL_NEUTRE, linewidth = 0.5) +
+  geom_vline(xintercept = D_GRATUITE, linetype = "dashed",
+             color = COL_GRATUITE, linewidth = 0.5) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%m.%Y") +
+  labs(title = "Montées par kilomètre produit, mois par mois",
+       subtitle = paste0("Rapport entre la fréquentation et l'offre. Spearman rho = ",
+                         round(as.numeric(sp_c$estimate), 3),
+                         ".\nTraits : renforcement d'offre de décembre 2024 et gratuité jeunes."),
+       x = NULL, y = "Montées par kilomètre", caption = SOURCE_TPG) +
+  theme_projet() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# =============================================================================
-# 9. BILAN SCRIPT 13
-# =============================================================================
+print(p_temps)
+ggsave(file.path(DIR_FIG, "13_ratio_temporel.png"), p_temps, width = 12, height = 6, dpi = 150)
+message("Figures enregistrées.")
 
-cat("\n=== BILAN SCRIPT 13 ===\n\n")
+# ── 8. SAUVEGARDE ───────────────────────────────────────────
 
-cat("SYN-005 — Rigidite de l'offre en vacances :\n")
-cat("  Baisse montees :", baisse_mont_pct, "% | Baisse km :", baisse_km_pct, "%\n")
-cat("  Ecart           :", ecart_pp, "pp\n")
-cat("  T-013a MW p =", format(mw_t013a$p.value, scientific = TRUE),
-    "| HL =", round(mw_t013a$estimate, 4),
-    "| r =", round(r_t013a, 3), "\n\n")
+write.csv(ratio_ligne %>% mutate(ratio = round(ratio, 3)),
+          file.path(DIR_RES, paste0("13_ratio_par_ligne_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(ratio_mensuel %>% mutate(ratio = round(ratio, 3)),
+          file.path(DIR_RES, paste0("13_ratio_mensuel_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
+write.csv(resume_mode,
+          file.path(DIR_RES, paste0("13_resume_modes_", SNAPSHOT_ID, ".csv")), row.names = FALSE)
 
-cat("SYN-006 — Tendance temporelle ratio 2016-2026 :\n")
-cat("  Mediane 2016 :",
-    round(median(ratio_mensuel$ratio[ratio_mensuel$annee == 2016]), 4), "\n")
-cat("  Mediane 2025 :",
-    round(median(ratio_mensuel$ratio[ratio_mensuel$annee == 2025], na.rm = TRUE), 4), "\n")
-cat("  T-013c Spearman rho =", round(sp_t013c$estimate, 3),
-    "p =", format(sp_t013c$p.value, scientific = TRUE),
-    if (ljung_autocorr) "(informatif — autocorrelation confirmee)\n\n"
-    else "(hors COVID)\n\n")
-
-cat("SYN-010 — Trams vs Bus :\n")
-cat("  Trams mediane :", round(median(tram_r), 3),
-    "| Bus mediane :", round(median(bus_r), 3), "montees/km\n")
-cat("  T-013b MW p =", format(mw_t013b$p.value, scientific = TRUE),
-    "| r =", round(r_t013b, 3),
-    "| Limite : n_tram =", length(tram_r), "\n\n")
-
-cat("3 graphiques sauvegardes dans figures/\n")
-cat("[TPG] Observations sensibles marquees # [TPG] dans le script\n")
-
-message("Script 13 termine.")
+message("Script 13 terminé. Figures dans figures/, résultats dans resultats/.")
