@@ -1,5 +1,7 @@
 # Données ouvertes et transport public à Genève : une analyse statistique
 
+*Français | [English](#english)*
+
 Analyse statistique des données ouvertes de fréquentation, d'offre et de collisions du réseau de transports publics à Genève, de 2016 à juin 2026.
 
 > Source : transports publics genevois (tpg), état en date du 18.09.2026. Ce travail n'est pas la propriété des tpg.
@@ -325,3 +327,339 @@ Les couleurs des figures ont été choisies pour ce projet. Elles ne reprennent 
 ## Auteur
 
 **Frat DAG**, statisticien, Genève.
+
+---
+
+<a name="english"></a>
+
+# Open data and public transport in Geneva: a statistical analysis
+
+*[Français](#données-ouvertes-et-transport-public-à-genève--une-analyse-statistique) | English*
+
+A statistical analysis of open data on ridership, service supply and collisions for the public transport network in Geneva, from 2016 to June 2026.
+
+> Source : transports publics genevois (tpg), état en date du 18.09.2026. Ce travail n'est pas la propriété des tpg.
+>
+> Couches géographiques : Source : Système d'information du territoire à Genève (SITG), extrait en date du 20.03.2026 (communes, secteurs) et du 21.08.2026 (emprise du lac).
+
+The source statements above are reproduced in French because both data providers impose their exact wording.
+
+The project follows one rule: nothing is claimed before it has been computed, and every result is published with its effect size, its uncertainty and its limits. Every figure in this document comes from the results registry written by the scripts (`resultats/resultats_2026-09-18.csv`) or from the tables saved in `resultats/`. None is copied by hand.
+
+---
+
+## Glossary
+
+Three short tables, so that the rest reads without prior knowledge of the network or of statistics.
+
+**What is being counted**
+
+| Term | Meaning in this project |
+|---|---|
+| Boarding | One passenger stepping onto a vehicle. Someone who changes vehicle counts twice: these are boardings, not travellers. |
+| Vehicle-km | Kilometres run by vehicles in service. This is the measure of supply. |
+| Boardings per km | Ridership relative to supply. It says nothing about how full a vehicle is: vehicle size does not enter the calculation. |
+| Stop place | A stop name, with all its platforms grouped. One name can cover up to twelve platforms. |
+| Snapshot | A frozen copy of the data, downloaded on a given date and never re-read afterwards. This one dates from 18.09.2026. |
+
+**Network categories, as they appear in the data**
+
+| Term | Meaning |
+|---|---|
+| PRINCIPAL, SECONDAIRE | The operator's classification of regular lines. Principal lines serve the densest corridors. |
+| GLCT | Cross-border lines. |
+| SCOLAIRE | School lines C1 to C9, running only on school days. |
+| NOCTAMBUS REGIONAL | Regional night lines, replaced on 10.12.2023 by the night extension of daytime lines. |
+| REGIONAL, REGIONAL COMMUNE | Categories that disappear in January 2020, merged with SECONDAIRE so that ten years can be compared. |
+| SITG | The Geneva territorial information system, source of the geographic layers (municipalities, city sectors, lake). |
+
+**Statistical terms used in the results**
+
+| Term | What it means |
+|---|---|
+| Effect size | How large a difference is in practice, regardless of how many observations there are. With a lot of data, a tiny difference can be "significant" without being important. |
+| 95 % CI | Confidence interval: the range of values compatible with the data. If it contains zero, the difference is not established. |
+| Hodges-Lehmann (HL) | A robust estimate of the difference between two groups, paired with the Mann-Whitney and Wilcoxon tests. |
+| p-value | The probability of seeing such a difference if nothing were going on. It assumes independent observations, which consecutive days or months are not: it is often deliberately absent here. |
+| Autocorrelation | The fact that one observation resembles the previous one. A busy Tuesday often follows a busy Monday. |
+| Gini | Concentration, from 0 (perfect equality) to 1 (everything on a single element). |
+| STL | A decomposition of a series into three parts: trend, seasonality and remainder. |
+| Bai-Perron | A method that searches for how many level breaks a series contains, and on which dates. |
+| Newey-West, HC3 | Robust standard errors: the first against autocorrelation, the second against unequal variances. |
+| Placebo | The same computation applied where the studied event did not happen, to see what an ordinary variation looks like. |
+| Elasticity | By what percentage one quantity changes when another changes by 1 %. |
+
+---
+
+## Data and scope
+
+### Datasets
+
+| Dataset | Content | Period used | Used in |
+|---|---|---|---|
+| Stops | Stop reference file, coordinates, active status | As of 18.09.2026, 4,655 rows | 01, 11, 12, 15 |
+| Daily boardings | Day x line x stop | 02.2023 to 06.2026, 4,581,814 rows received | 02, 09, 12, 13, 14, 15 |
+| Monthly boardings | Month x line x stop | 01.2016 to 06.2026, 514,799 rows received | 02, 03, 06, 07, 09, 10, 11, 13, 14 |
+| Hourly ridership | Day x hourly band, whole network | 01.2019 to 06.2026, 65,479 rows received | 04, 05, 07, 14 |
+| Boardings by hour, stop and line | Day x hour x line x stop | 03.2024 to 06.2026, 581,660 rows received | 00b (control) |
+| Vehicle-km produced | Day x line | 01.2016 to 06.2026, 287,941 rows received | 08, 09, 10, 13 |
+| Collisions with third parties | Per event | 01.2015 to 06.2026, 10,359 rows received | 08, 11, 13 |
+| SITG, population by municipality | 45 municipalities | Population as of 12.2025, extracted 20.03.2026 | 12, 15 |
+| SITG, population by city sector | Sectors of the City of Geneva | Population as of 12.2025, extracted 20.03.2026 | 12 |
+| SITG, lake extent (GEO_LAC) | Lake Geneva, Rhône, Arve | Extracted 21.08.2026 | 12, 15 |
+
+tpg source: [opendata.tpg.ch](https://opendata.tpg.ch). SITG source: [sitg.ch](https://sitg.ch).
+
+Every download is logged in a manifest (rows received against rows announced by the interface, SHA-256 fingerprint of each file). All seven tpg datasets arrived complete.
+
+### Processing applied to the data
+
+Both providers' terms of use require that processing be disclosed. This project's processing is as follows.
+
+- **Frozen snapshot.** All tpg data were downloaded on 18.09.2026 and are never re-read from the API. Since the portal is a live source, a new extraction may give slightly different figures.
+- **Final data and cut-off.** Only rows flagged as final are kept, and the analysis stops on 30.06.2026 (the last date on which the datasets agree, verified by `00b_verification_definitif.R`).
+- **Reading of missing values.** Files are read with `na = ""`. Without this setting, the night line named "NA" was read as a missing value and its boardings disappeared.
+- **Lines 301 and 302.** Their boardings diverge sharply between the monthly and the daily dataset in January and February 2025. Results covering that period are also given without those two lines.
+- **Line categories.** Each line's category is the one supplied in the data. Some lines change category over time; the scripts that depend on it apply a written rule (most recent or most frequent category) and say so. The REGIONAL and REGIONAL COMMUNE categories, which disappear in January 2020, are merged with SECONDAIRE in script 03.
+- **Mode of transport.** Mode (tram, trolleybus, bus) is inferred from the vehicle category in the collisions dataset; lines absent from that dataset are treated as buses.
+- **Municipal areas.** The SITG polygons of lakeside municipalities include their share of the lake. For areas, densities and map display, the lake, the Rhône and the Arve are removed using the GEO_LAC layer. Stops remain attached to municipalities through the full polygons, so that a stop on a bridge stays in its municipality.
+- **Geometries.** A few invalid SITG geometries are repaired with `st_make_valid()`, with a count before and after.
+
+### What the data do not contain
+
+- Lake shuttles (Mouettes genevoises) appear in no dataset: the 143 lines of the monthly dataset all belong to the land network. The stop name "Carouge, Mouettes" is a street in Carouge, unrelated.
+- The NOCTAMBUS REGIONAL category contains only the twelve regional night lines. The urban Noctambus lines are not in it.
+- Boardings count trips onto a vehicle, not travellers: a person who transfers is counted twice.
+- Published boardings are not whole numbers (for example 209.51 for one month and one line). They are therefore estimates, but the counting method is not documented in the dataset.
+- No data on vehicle capacity, infrastructure (dedicated right of way), costs, passenger origins and destinations, or municipal income.
+- The SITG population is that of December 2025, while boardings run to June 2026: the two dates do not coincide.
+
+---
+
+## Results
+
+### 1. A highly concentrated network
+
+Over the last twelve months (07.2025 to 06.2026), the 931 stop places (all platforms of a same name grouped) have a Gini index of **0.828**, 95 % bootstrap CI [0.791 ; 0.861]. The busiest 10 % of stop places account for **72.2 %** of all boardings (T-007).
+
+The 23 PRINCIPAL lines carry 84.8 % of boardings over the period covered by the daily dataset.
+
+![Lorenz curve](figures/09_lorenz_arrets.png)
+
+### 2. The week, the day and the year
+
+An ordinary weekday sees a median of **741,767 boardings**, against 534,304 on a school-holiday weekday, that is **-28 %** (T-002).
+
+Across 1,443 ordinary weekdays, 5 p.m. exceeds 8 a.m. in **99.9 %** of cases, by 13,748 boardings according to the Hodges-Lehmann estimator (T-003). This result concerns the network as a whole; it has not been checked line by line.
+
+The five working days differ little in volume: the day of the week explains 1.2 % of the variance (T-001). Wednesday stands out through its hourly profile. Compared with the other days of its own week, it differs at 17 hours out of 19: **+15.4 %** at noon, **+16.3 %** at 2 p.m., **-11.6 %** at 4 p.m., -5.9 % at 8 a.m. (T-005).
+
+Seasonality is pronounced: March and November run about 1.7 million boardings above trend, July and August 2.6 and 2.3 million below. The seasonal profile is almost identical before 2020 and since 2022 (correlation 0.994).
+
+![Wednesday gap](figures/05_ecart_mercredi.png)
+
+### 3. The pandemic and today's level
+
+The seasonally adjusted monthly series (01.2016 to 06.2026) shows three breaks selected by the BIC; the segments end in February 2020, August 2021 and February 2023 (T-004b). The floor is April 2020, at 3.48 million boardings.
+
+The last segment, since March 2023, stands **+4.21 %** above the pre-2020 level, 95 % CI [0.91 ; 7.63] using a standard error robust to autocorrelation (T-006). At constant geography (1,172 platforms served in every month of both periods), the gap is +1.97 %, CI [-1.17 ; 5.22]: it is not established. The pre-pandemic level has been recovered; the slight excess on the full network is partly due to new platforms.
+
+![Structural breaks](figures/07_ruptures_structurelles.png)
+
+### 4. Supply has grown faster than ridership
+
+From 2016 to 2025, boardings rise by **9 %** and vehicle-km by **27 %**. Each kilometre therefore carries **13.8 %** fewer boardings (T-013d).
+
+The decomposition attributes 6.7 points to kilometres shifting towards less-loaded line categories, 5.4 points to a decline within categories, and 1.6 point to categories that disappeared. Across the 40 lines present in both 2016 and 2025, the decline is 6.8 %. The data do not allow the cause to be identified.
+
+Over the recent period (02.2023 to 06.2026) the ratio is stable: -1.3 % across 41 months (T-013c). During school holidays each kilometre carries 6.67 boardings against 7.83 in term time: ridership falls faster than supply (T-013a).
+
+![Boardings per kilometre](figures/13_ratio_temporel.png)
+
+### 5. Free travel for young people (January 2025): no visible effect on the total
+
+Between 2024 and 2025, month by month, boardings rise by 4.61 % and vehicle-km by 5.33 %: boardings per kilometre fall by 0.57 %. The 2023 to 2024 control year, without the measure, gives -2.41 %; the gap is 1.84 point (T-009).
+
+To judge whether that gap is out of the ordinary, the same computation was run on the other year pairs outside the pandemic: they range from -2.41 % to +0.48 %, and the year of the measure ranks 3rd out of 5. At constant line category, the change is +0.60 % against +0.06 % in the control year. No effect is detectable on the network total.
+
+Two caveats: service was strengthened on 15.12.2024, sixteen days before the measure, and monthly data cannot separate the two; and the measure targets young people, whom these data do not distinguish from other passengers. This result therefore says nothing about the effect on young people themselves.
+
+### 6. School lines: a shrinking service, not shrinking use
+
+From 2016 to 2025, boardings on school lines fall by **37 %** and the number of stops served by **34 %**. Boardings per stop served fall by only 4 % (AM-002). The decline follows the reduction in service.
+
+Over the last twelve months, eight lines (C1, C3 to C9) serve 275 stops and carry 0.18 % of network boardings. A municipality's number of school stops is associated with its population aged 0 to 19, rho = 0.517, 95 % CI [0.225 ; 0.741] (T-015a). 24 municipalities out of 45 have no school stop; all of them except Céligny are served by the regular network.
+
+![School lines](figures/09_scolaire_perimetre.png)
+
+### 7. Lines and modes
+
+PRINCIPAL lines carry a median of **8.25** boardings per kilometre, SECONDAIRE lines **1.68** (Hodges-Lehmann 6.46, 95 % CI [5.10 ; 7.76], T-010). This gap partly recovers the criterion used to classify the lines in the first place, which follows the density served. Internal spread is wide: from 2.43 to 24.48 among PRINCIPAL lines, from 0.08 to 9.13 among SECONDAIRE ones.
+
+By mode, medians are 6.43 boardings per kilometre for trams (5 lines), 3.15 for trolleybuses (6) and 0.85 for buses (101), T-013b. A tram set offers several times the capacity of a bus, and trams serve the densest corridors: the gap measures neither occupancy nor an efficiency intrinsic to the mode.
+
+![Boardings per km by mode](figures/13_ratio_par_mode.png)
+
+### 8. Collisions: the count follows supply
+
+From 2016 to 2025, the number of collisions with third parties rises by 29.6 %, vehicle-km by 26.9 %, and the rate per million kilometres by only **2.1 %**. The year with the highest rate is 2019 (37.6 per million km). 2025, the year with the highest raw count, ranks 5th out of 10 on the rate (OBS-COLLISIONS). Computed on the kilometres of lines actually present in the collisions dataset, the rate rises by 3.9 % and 2025 moves to 3rd.
+
+The share of collisions with an injury does not vary by season: 7.87 % in spring and summer, 8.15 % in autumn and winter, Cramér's V 0.0048 (T-011).
+
+97.5 % of collisions happen within 200 m of an active stop. Ranking stops by collision count and ranking them relative to boardings overlap only partly (rank correlation 0.664). Neither measures danger: the right denominator would be the number of vehicle passages, which is not published per stop.
+
+![Collisions and rate](figures/08_collisions_annuel.png)
+
+### 9. Territorial coverage
+
+For the 44 municipalities with at least one active stop, the number of stops is modelled by population and land area (R² = 0.923). Elasticities are **0.509** for population, 95 % CI [0.453 ; 0.566], and **0.520** for area, CI [0.388 ; 0.652]. Their sum, 1.029 [0.908 ; 1.15], is compatible with 1: stops per inhabitant then depend mainly on density (T-012).
+
+Two municipalities have clearly fewer stops than the model predicts: Troinex and Versoix (studentised residuals -2.06 and -2.24). This is a flag, not a test: across 44 municipalities, about two exceedances are expected by chance. The model measures neither service frequency nor demand.
+
+Boardings related to population do not measure use by residents: a boarding at a central station is made by travellers from across the canton.
+
+![Stop coverage](figures/12_carte_couverture.png)
+
+### 10. The night network
+
+On 10.12.2023 the Noctambus was replaced by the night extension of daytime lines. From January to November, 2023 against 2024, boardings between 1 a.m. and 4 a.m. on Friday and Saturday nights rise by **17.1 %** per weekend, against 3.1 % during the day. Against the control year, the gap is 16.8 points. Applied to every hour from 6 a.m. to 11 p.m., the same computation never exceeds 2.5 points: the night band ranks 1st out of 19 (T-014b).
+
+Over calendar years, the 2024 gain is 109,820 boardings between 1 a.m. and 4 a.m., which matches the 110,000 additional passengers announced by the operator. The percentage differs: 16.6 % here against 21.6 % announced, the announcement's base not being reconstructible from these data.
+
+Before the pandemic the regional Noctambus was already declining: 2019 stands at -15.7 % of 2016, Spearman rho = -0.55 (T-014a). In 2022, its last full year of service, it stood at -41.9 % of 2019.
+
+![Night boardings](figures/14_nuit_1h_4h.png)
+
+---
+
+## Cross-cutting limitations
+
+- **Autocorrelation.** Daily and monthly series are strongly autocorrelated. The p-values of tests assuming independence are too optimistic: they are not published, in favour of effect sizes and intervals. Where possible, a robust standard error (Newey-West, HC3) or an effective sample size is computed.
+- **Capacity.** Boardings per kilometre take no account of vehicle size. They measure use per kilometre offered, not occupancy.
+- **Causality.** No result in this project establishes a cause. Before-and-after comparisons control what they can (control year, placebo, constant perimeter) and state what they do not control.
+- **Descriptive or test.** Some results are purely descriptive (line 10, atypical municipalities). They are flagged as such.
+
+---
+
+## Tests and observations
+
+| ID | Question | Method | Main result | Script |
+|---|---|---|---|---|
+| T-001 | Do working days differ in volume? | Kruskal-Wallis, Dunn post-hoc (Bonferroni) | eta² = 0.012; 5 pairs out of 10 | 05 |
+| T-002 | Ordinary days against school holidays | Mann-Whitney | -28 %; HL 188,160 boardings/day | 07 |
+| T-003 | Does 5 p.m. exceed 8 a.m.? | Paired Wilcoxon | HL 13,748; 99.9 % of days | 04 |
+| T-004b | Breaks in the series | Bai-Perron on the seasonally adjusted series | 3 breaks (02.2020, 08.2021, 02.2023) | 07 |
+| T-005 | Wednesday's hourly profile | Paired within-week Wilcoxon, by hour | 17 hours out of 19 | 05 |
+| T-005b | Each day's hourly profile | Kruskal-Wallis by day and hour | 54 tests out of 95 (Bonferroni) | 05 |
+| T-006 | Current level against pre-2020 | Regression, Newey-West standard error | +4.21 % [0.91 ; 7.63]; constant platforms +1.97 % [-1.17 ; 5.22] | 07 |
+| T-007 | Concentration across stop places | Gini, bootstrap | 0.828 [0.791 ; 0.861] | 09 |
+| T-008 | Supply and ridership by line | Spearman, bootstrap | rho = 0.904 [0.83 ; 0.942], partly mechanical | 09 |
+| T-009 | Free travel for young people | Paired Wilcoxon, control year, placebo, decomposition | gap 1.84 point, rank 3 of 5, no detectable effect | 09 |
+| AM-002 | School lines | Annual perimeter | boardings -37 %, stops -34 %, per stop -4 % | 09 |
+| T-010 | PRINCIPAL against SECONDAIRE | Mann-Whitney | medians 8.25 and 1.68 boardings/km | 10 |
+| OBS-COLLISIONS | Collisions relative to supply | Rate per million km | rate +2.1 % from 2016 to 2025 | 08 |
+| OBS-COLLISIONS-ARRETS | Collisions near stops | Nearest stop, 200 m threshold | rank correlation 0.664 | 11 |
+| T-011 | Injuries by season | Chi-square | Cramér's V 0.0048 | 11 |
+| T-012 | Stops, population and area | Log-log regression, HC3 errors | elasticities 0.509 and 0.520, R² 0.923 | 12 |
+| T-013a | Boardings per km during holidays | Mann-Whitney | 6.67 against 7.83 | 13 |
+| T-013b | Boardings per km by mode | Kruskal-Wallis | tram 6.43, trolleybus 3.15, bus 0.85 | 13 |
+| T-013c | Recent trend in boardings per km | Spearman on month rank | -1.3 % across 41 months | 13 |
+| T-013d | Boardings per km since 2016 | Annual series, decomposition, constant perimeter | -13.8 % from 2016 to 2025 | 13 |
+| T-014a | Regional Noctambus before the pandemic | Andrews supF, Spearman | 2019 at -15.7 % of 2016; rho = -0.55 | 14 |
+| T-014b | December 2023 night network | Paired by month, control year, hourly placebo | night +17.1 %, day +3.1 %, rank 1 of 19 | 14 |
+| T-014c | Line 10 recovery (descriptive) | Rank among principal lines | -7.5 % against 2019, rank 5 of 22 | 14 |
+| T-014d | Line 10 during holidays (descriptive) | Rank among principal lines | ratio 0.807, rank 2 of 22 | 14 |
+| T-015a | School stops and young population | Spearman, bootstrap | rho = 0.517 [0.225 ; 0.741] | 15 |
+
+Details for each row (sample sizes, statistics, notes) are in `resultats/resultats_2026-09-18.csv`.
+
+---
+
+## Reproducing the analysis
+
+### Requirements
+
+R 4.5 or later, and the following packages:
+
+```r
+install.packages(c("here", "httr2", "jsonlite", "digest", "readr",
+                   "dplyr", "tidyr", "lubridate", "ggplot2", "scales", "viridis",
+                   "strucchange", "sandwich", "sf", "leaflet", "htmlwidgets",
+                   "webshot2"))
+```
+
+`webshot2` produces the PNG version of the two interactive maps and requires Chrome or Edge on the machine. The published analysis ran under R 4.5.3, Windows 11, Europe/Zurich time zone.
+
+### Data
+
+1. **tpg data.** `R/00_download.R` downloads the seven datasets into `data/raw/<today's date>/`, with a manifest. The published analysis uses the snapshot of 18.09.2026 (`SNAPSHOT_ID` in `R/config.R`). A new download creates a new snapshot, whose figures may differ slightly.
+2. **SITG layers.** To be downloaded by hand from [sitg.ch](https://sitg.ch) and unzipped into `data/raw/sitg/`: `OCS_POPBATLOG_COMMUNE` into `communes/`, `OCS_POPBATLOG_VGE_SECTEUR` into `secteurs/`, `GEO_LAC` into `lac/`.
+
+### Execution
+
+`R/run_all.R` runs each script in a fresh R process, in order, then checks that every expected figure and table was written **during that run**: an older file with the right name does not count. A script that depended on an object left in memory by another one therefore fails here. On the snapshot of 18.09.2026, all 16 scripts pass and every expected output is produced.
+
+With each new snapshot, first run `00b_verification_definitif.R`, which checks the date up to which the datasets are final and consistent.
+
+---
+
+## Repository structure
+
+```
+R/
+  config.R                         snapshot, cut-off, event dates, lire(), enregistrer()
+  00_palette.R                     figure colours and theme
+  00_download.R                    download of the tpg datasets
+  00b_verification_definitif.R     check on final data
+  01_arrets_import.R               stops, interactive map
+  02_frequentation_import.R        checks on the daily dataset, network structure
+  03_evolution_temporelle.R        2016-2026 trend
+  04_heatmap_horaire.R             T-003
+  05_profil_journalier.R           T-001, T-005, T-005b
+  06_saisonnalite.R                STL decomposition
+  07_impact_covid.R                T-002, T-004b, T-006
+  08_collisions.R                  collisions and exposure, interactive map
+  09_tests_statistiques.R          T-007, T-008, T-009, AM-002
+  10_efficience_lignes.R           T-010
+  11_collisions_spatial.R          collisions near stops, T-011
+  12_sitg_equite_territoriale.R    T-012
+  13_offre_demande.R               T-013a to T-013d
+  14_noctambus_ligne10.R           T-014a to T-014d
+  15_sitg_scolaire_socioeco.R      T-015a
+  run_all.R                        full run and output check
+data/
+  raw/<snapshot>/                  tpg datasets (.csv and .rds)
+  raw/sitg/                        SITG layers
+  processed/<snapshot>/            intermediate files
+figures/                           PNG figures and HTML maps
+resultats/                         results registry and CSV tables
+logs/                              run logs (not published)
+LICENSE                            MIT licence (code only)
+```
+
+---
+
+## How this was done
+
+A first version of this analysis, dating from April 2026, was entirely redone in September 2026: several of its conclusions did not survive methodical scrutiny. Every test was rewritten on a frozen snapshot of the data, and no result from the earlier version was carried over as it stood.
+
+The rework was carried out with the assistance of Claude (Anthropic). Every script was run twice independently, in two separate environments, and was validated only when both outputs agreed. Every correction, its justification and its effect on the results are recorded in a separate registry.
+
+The code is published under the MIT licence. The data remain the property of their producers and are subject to the terms of use of their respective portals.
+
+### Next steps
+
+- Validate the results out of sample, on data from October 2026 to March 2027, with each new snapshot.
+- Compare two snapshots to check whether data flagged as final are revised afterwards.
+
+---
+
+## A note on colours
+
+The colours used in the figures were chosen for this project. They do not reproduce the visual identity of any company, and this work is independent of any transport operator.
+
+---
+
+## Author
+
+**Frat DAG**, statistician, Geneva.
