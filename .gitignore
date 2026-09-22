@@ -39,3 +39,4 @@ logs/
 Rplots.pdf
 README_clean.md
 figures/*_files/
+.RDataTmp
