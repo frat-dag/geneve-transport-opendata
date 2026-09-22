@@ -10,6 +10,49 @@ Le projet part d'une règle : rien n'est affirmé avant d'avoir été calculé, 
 
 ---
 
+## Lexique
+
+Trois tableaux pour rendre la suite lisible sans connaissance préalable du réseau ni des statistiques.
+
+**Ce qui est compté**
+
+| Terme | Sens dans ce projet |
+|---|---|
+| Montée | Un embarquement dans un véhicule. Une personne qui change de véhicule compte deux montées : ce sont des embarquements, pas des voyageurs. |
+| Km produits | Kilomètres parcourus par les véhicules en service. C'est la mesure de l'offre. |
+| Montées par km | Fréquentation rapportée à l'offre. Ne dit rien du remplissage : la taille des véhicules n'entre pas dans le calcul. |
+| Lieu d'arrêt | Un nom d'arrêt, tous ses quais regroupés. Un même nom peut couvrir jusqu'à douze quais. |
+| Instantané | Copie figée des données, téléchargée à une date donnée et jamais relue ensuite. Celui-ci date du 18.09.2026. |
+
+**Catégories du réseau, telles qu'elles figurent dans les données**
+
+| Terme | Sens |
+|---|---|
+| PRINCIPAL, SECONDAIRE | Classement des lignes régulières par l'opérateur. Les lignes principales desservent les axes les plus denses. |
+| GLCT | Lignes transfrontalières. |
+| SCOLAIRE | Lignes C1 à C9, qui ne circulent que les jours d'école. |
+| NOCTAMBUS REGIONAL | Lignes régionales de nuit, remplacées le 10.12.2023 par le prolongement nocturne des lignes de jour. |
+| REGIONAL, REGIONAL COMMUNE | Types disparus en janvier 2020, regroupés avec SECONDAIRE pour comparer sur dix ans. |
+| SITG | Système d'information du territoire à Genève, source des couches géographiques (communes, secteurs, lac). |
+
+**Termes statistiques employés dans les résultats**
+
+| Terme | Ce qu'il veut dire |
+|---|---|
+| Taille d'effet | L'importance pratique d'un écart, indépendamment du nombre d'observations. Avec beaucoup de données, un écart minuscule peut être « significatif » sans être important. |
+| IC 95 % | Intervalle de confiance : la plage de valeurs compatibles avec les données. S'il contient zéro, l'écart n'est pas établi. |
+| Hodges-Lehmann (HL) | Estimation robuste de l'écart entre deux groupes, associée aux tests de Mann-Whitney et de Wilcoxon. |
+| p-value | Probabilité d'observer un tel écart si rien ne se passait. Elle suppose des observations indépendantes, ce que des jours ou des mois successifs ne sont pas : elle est souvent absente ici, volontairement. |
+| Autocorrélation | Le fait qu'une observation ressemble à la précédente. Un mardi chargé suit souvent un lundi chargé. |
+| Gini | Concentration, entre 0 (tout le monde à égalité) et 1 (tout concentré sur un seul élément). |
+| STL | Décomposition d'une série en trois morceaux : tendance, saisonnalité et reste. |
+| Bai-Perron | Méthode qui cherche combien de ruptures de niveau contient une série, et à quelles dates. |
+| Newey-West, HC3 | Erreurs types robustes : la première à l'autocorrélation, la seconde à l'hétérogénéité des variances. |
+| Placebo | Le même calcul appliqué là où l'événement étudié n'a pas eu lieu, pour voir à quoi ressemble une variation ordinaire. |
+| Élasticité | De combien de pour cent varie une grandeur quand une autre varie de 1 %. |
+
+---
+
 ## Données et périmètre
 
 ### Jeux de données
@@ -270,24 +313,6 @@ Le code est publié sous licence MIT. Les données, elles, restent la propriét�
 
 - Valider les résultats hors échantillon, sur les données d'octobre 2026 à mars 2027, à chaque nouvel instantané.
 - Comparer deux instantanés pour vérifier si des données marquées définitives sont révisées après coup.
-
----
-
-## Lexique
-
-| Terme | Sens dans ce projet |
-|---|---|
-| Montée | Un embarquement dans un véhicule. Une correspondance compte deux montées. |
-| Km produits | Kilomètres parcourus par les véhicules en service, mesure de l'offre. |
-| Hodges-Lehmann (HL) | Estimation robuste de l'écart entre deux groupes, associée aux tests de Mann-Whitney et de Wilcoxon. |
-| IC 95 % | Intervalle de confiance à 95 %. |
-| Taille d'effet | Importance pratique d'un écart, indépendante du nombre d'observations (r, eta², V de Cramer). |
-| Gini | Concentration entre 0 (tous égaux) et 1 (tout sur un seul élément). |
-| STL | Décomposition d'une série en tendance, saisonnalité et reste. |
-| Bai-Perron | Recherche du nombre et des dates de ruptures dans une série. |
-| Newey-West, HC3 | Erreurs types robustes, à l'autocorrélation pour la première, à l'hétérogénéité des variances pour la seconde. |
-| Placebo | Même calcul appliqué là où l'événement étudié n'a pas eu lieu, pour mesurer la variation ordinaire. |
-| Élasticité | Variation en % d'une grandeur quand une autre varie de 1 %. |
 
 ---
 
